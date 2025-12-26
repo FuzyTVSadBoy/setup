@@ -1,15 +1,16 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -e
 
-echo "========== APK INSTALL TEST =========="
-echo "[*] Current dir: $(pwd)"
-echo "[*] Android version:"
-getprop ro.build.version.release
-echo "[*] ABI:"
-getprop ro.product.cpu.abi
-echo "======================================"
+echo "===== UGPHONE APK INSTALL TEST ====="
 
-APK_DIR=$HOME/auto_apk_test
+# đảm bảo storage
+if [ ! -d "$HOME/storage" ]; then
+  termux-setup-storage
+  echo "[!] Đã cấp quyền storage, chạy lại script"
+  exit 0
+fi
+
+APK_DIR=/sdcard/Download/auto_apk_test
 rm -rf "$APK_DIR"
 mkdir -p "$APK_DIR"
 cd "$APK_DIR"
@@ -17,7 +18,7 @@ cd "$APK_DIR"
 echo "[+] Installing gdown..."
 pip install -q gdown
 
-echo "[+] Downloading APK from Drive..."
+echo "[+] Downloading APK to /sdcard/Download..."
 gdown --folder https://drive.google.com/drive/folders/16dE9WRhm53lh7STAOGnwWPZya_c9WxOc
 
 echo
@@ -28,18 +29,14 @@ echo
 echo "[+] Testing APK install..."
 
 for apk in *.apk; do
-  echo "--------------------------------------"
-  echo "[TEST] File: $apk"
+  echo "-----------------------------"
+  echo "[TEST] $apk"
 
   echo "[1] pm install"
-  pm install "$apk"
-  echo "[pm exit code] $?"
+  pm install "$apk" || echo "[!] pm install FAILED"
 
-  echo
   echo "[2] adb install"
-  adb install "$apk"
-  echo "[adb exit code] $?"
+  adb install "$apk" || echo "[!] adb install FAILED"
 done
 
-echo
-echo "========== TEST DONE =========="
+echo "===== TEST DONE ====="
