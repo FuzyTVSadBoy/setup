@@ -15,7 +15,7 @@ ok()   { echo -e "${GREEN}[✓]${RESET} $1"; }
 warn() { echo -e "${YELLOW}[!]${RESET} $1"; }
 fail() { echo -e "${RED}[X]${RESET} $1"; }
 
-echo -e "${GREEN}===== UGPHONE AIO FINAL =====${RESET}"
+echo -e "${GREEN}===== UGPHONE AIO FINAL (STABLE) =====${RESET}"
 line
 
 # ================== 1. STORAGE ==================
@@ -78,7 +78,7 @@ line
 step "7/9" "Changing Android ID"
 HWID="f43f5764ee3f616a"
 su -c "settings put secure android_id $HWID" >/dev/null 2>&1
-ok "Android ID set"
+ok "Android ID applied"
 line
 
 # ================== 8. UI / WINDOW ==================
@@ -91,42 +91,50 @@ su -c "settings put global force_desktop_mode_on_external_displays 1" >/dev/null
 ok "UI options applied"
 line
 
-# ================== 9. APK DOWNLOAD & INSTALL ==================
+# ================== 9. APK DOWNLOAD & INSTALL (STABLE) ==================
 step "9/9" "Downloading & installing APKs"
 
-APK_DIR="/sdcard/Download/"
-rm -rf "$APK_DIR"
-mkdir -p "$APK_DIR"
-cd "$APK_DIR" || exit 1
+APK_DIR="/sdcard/Download/auto_apk_root"
+TMP_DIR="/sdcard/Download/.apk_tmp"
 
-SUCCESS=0
-FAIL=0
+rm -rf "$APK_DIR" "$TMP_DIR"
+mkdir -p "$APK_DIR" "$TMP_DIR"
+cd "$TMP_DIR" || exit 1
 
-echo "  • Downloading APKs..."
-gdown --folder https://drive.google.com/drive/folders/16dE9WRhm53lh7STAOGnwWPZya_c9WxOc >/dev/null 2>&1
+echo -e "${BLUE}→ Downloading APKs from Google Drive...${RESET}"
+gdown --folder https://drive.google.com/drive/folders/16dE9WRhm53lh7STAOGnwWPZya_c9WxOc \
+  >/dev/null 2>&1 || true
 
-for apk in *.apk; do
+find . -type f -name "*.apk" -exec mv {} "$APK_DIR/" \;
+rm -rf "$TMP_DIR"
+ok "APK download completed"
+
+INSTALLED=0
+FAILED=0
+
+for apk in "$APK_DIR"/*.apk; do
   [ -f "$apk" ] || continue
+  name=$(basename "$apk")
 
-  echo -e "${BLUE}→ Installing:${RESET} $apk"
+  echo -e "${BLUE}→ Installing:${RESET} $name"
 
-  if su -c "pm install -r \"$APK_DIR/$apk\"" >/dev/null 2>&1; then
-    ok "$apk installed (silent)"
-    SUCCESS=$((SUCCESS+1))
+  if su -c "pm install -r \"$apk\"" >/dev/null 2>&1; then
+    ok "$name installed silently"
+    INSTALLED=$((INSTALLED+1))
   else
-    warn "$apk silent failed → UI"
+    warn "$name silent failed → UI"
     am start -a android.intent.action.VIEW \
-      -d "file://$APK_DIR/$apk" \
+      -d "file://$apk" \
       -t application/vnd.android.package-archive >/dev/null 2>&1
-    FAIL=$((FAIL+1))
+    FAILED=$((FAILED+1))
     sleep 2
   fi
 done
 
 line
-ok "Silent installed: $SUCCESS app(s)"
-warn "UI fallback: $FAIL app(s)"
+ok "Silent installed: $INSTALLED app(s)"
+warn "UI fallback: $FAILED app(s)"
 
 echo
 echo -e "${GREEN}===== ALL DONE =====${RESET}"
-echo -e "${YELLOW}• Reboot recommended${RESET}"
+echo -e "${YELLOW}• Reboot recommended for best effect${RESET}"
