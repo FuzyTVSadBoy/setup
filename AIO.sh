@@ -25,9 +25,8 @@ termux-setup-storage >/dev/null 2>&1
 ok "Storage ready"
 line
 
-step "2/9" "Preparing Termux environment (NO-STUCK FIX)"
 
-export DEBIAN_FRONTEND=noninteractive
+# ================== 3. PIP SAFE ===============step "2/9" "Preparing Termux environment (ULTIMATE FIX)"
 
 # ===== FORCE OFFICIAL REPO =====
 mkdir -p "$PREFIX/etc/apt"
@@ -36,30 +35,21 @@ cat > "$PREFIX/etc/apt/sources.list" <<'EOF'
 deb https://packages.termux.dev/apt/termux-main stable main
 EOF
 
-# ===== KILL ANY APT LOCK =====
-rm -f "$PREFIX/var/lib/dpkg/lock"*
-rm -f "$PREFIX/var/lib/apt/lists/lock"
-rm -f "$PREFIX/var/cache/apt/archives/lock"
-
-# ===== CLEAN CACHE =====
+# dọn cache apt
 rm -rf "$PREFIX/var/lib/apt/lists/"*
 rm -rf "$PREFIX/var/cache/apt/"*
 
-# ===== UPDATE (ANTI-HANG) =====
-timeout 60 apt update -y >/dev/null 2>&1 \
-  || warn "apt update timeout / warning (ignored)"
+# update repo (không cho kill script)
+apt update -y >/dev/null 2>&1 || warn "apt update warning (ignored)"
 
-# ===== INSTALL BASE PACKAGES =====
-if ! timeout 120 apt install -y \
-    python python-pip android-tools curl \
-    >/dev/null 2>&1; then
+# cài base packages (chỉ chỗ này mới được fail)
+if ! apt install -y python python-pip android-tools curl >/dev/null 2>&1; then
   fail "Base packages install failed"
   exit 1
 fi
 
-ok "Base packages ready (no hang)"
-line
-# ================== 3. PIP SAFE ==================
+ok "Base packages ready (forced repo)"
+line===
 step "3/9" "Preparing pip"
 pip cache purge >/dev/null 2>&1 || true
 rm -rf ~/.cache/pip >/dev/null 2>&1
