@@ -82,6 +82,7 @@ echo -e "${GREEN}[✓] ROOT OK${RESET}"
 
 # ===== 7. SET SYSTEM WINDOW OPTIONS =====
 echo -e "${BLUE}[7/10] Applying system window options...${RESET}"
+su -c "settings put global development_settings_enabled 1"
 su -c "settings put global minimum_width 610"
 su -c "settings put global force_resizable_activities 1"
 su -c "settings put global freeform_window_management 1"
