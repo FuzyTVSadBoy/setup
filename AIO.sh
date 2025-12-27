@@ -37,34 +37,82 @@ if ! su -c id >/dev/null 2>&1; then
 fi
 echo "[✓] ROOT OK"
 
-# ===== GOOGLE DRIVE APK =====
+# ===== GOOGLE DRIVE APK (FIXED) =====
 pip install --no-cache-dir gdown
 
 APK_DIR=/sdcard/Download/auto_apk_root
-rm -rf "$APK_DIR"
-mkdir -p "$APK_DIR"
-cd "$APK_DIR"
+TMP_DIR=/sdcard/Download/.apk_tmp
 
-echo "[+] Download APK from Google Drive..."
+rm -rf "$APK_DIR" "$TMP_DIR"
+mkdir -p "$APK_DIR" "$TMP_DIR"
+cd "$TMP_DIR"
+
+echo "[+] Download APK folder from Google Drive..."
 gdown --folder https://drive.google.com/drive/folders/16dE9WRhm53lh7STAOGnwWPZya_c9WxOc
 
+echo "[+] Collecting APK files..."
+find . -type f -name "*.apk" -exec mv {} "$APK_DIR/" \;
+
+rm -rf "$TMP_DIR"
+
 echo
-echo "[+] Downloaded files:"
-ls -lh
+echo "[+] Final APK list:"
+ls -lh "$APK_DIR"
 
 # ===== INSTALL APK (ROOT MODE) =====
-for apk in *.apk; do
-  echo "----------------------------------"
-  echo "[INSTALL] $apk"
+cd "$APK_DIR" || exit 1
 
-  if su -c "pm install '$APK_DIR/$apk'"; then
-    echo "[✓] Installed $apk"
-  else
-    echo "[X] Failed $apk"
-  fi
-su -c "settings put secure android_id f43f5764ee3f616a"
-echo "Change HWID to f43f5764ee3f616a"
+INSTALLED=0
+FAILED=0
+
+# Gom nhóm APK theo base name để detect split APK
+for BASE in $(ls *.apk | sed 's/_.*//g' | sort -u); do
+    FILES=$(ls ${BASE}*.apk 2>/dev/null)
+    COUNT=$(echo "$FILES" | wc -l)
+
+    echo "----------------------------------"
+    echo "[INSTALL] $BASE ($COUNT file)"
+
+    # SPLIT APK
+    if [ "$COUNT" -gt 1 ]; then
+        echo "    → Split APK detected"
+        if su -c "pm install-multiple $FILES"; then
+            echo "    ✓ Installed"
+            INSTALLED=$((INSTALLED+1))
+        else
+            echo "    ✗ Failed → fallback UI"
+            for apk in $FILES; do
+                am start -a android.intent.action.VIEW \
+                  -d "file://$APK_DIR/$apk" \
+                  -t application/vnd.android.package-archive
+                sleep 2
+            done
+            FAILED=$((FAILED+1))
+        fi
+    else
+        APK_FILE="$FILES"
+        echo "    → Single APK"
+        if su -c "pm install -r \"$APK_DIR/$APK_FILE\""; then
+            echo "    ✓ Installed"
+            INSTALLED=$((INSTALLED+1))
+        else
+            echo "    ✗ Failed → fallback UI"
+            am start -a android.intent.action.VIEW \
+              -d "file://$APK_DIR/$APK_FILE" \
+              -t application/vnd.android.package-archive
+            FAILED=$((FAILED+1))
+        fi
+    fi
+
+    # Đổi HWID / Android ID
+    su -c "settings put secure android_id f43f5764ee3f616a"
+    echo "    → HWID set to f43f5764ee3f616a"
+
 done
 
 echo
-echo "===== ALL DONE ====="
+echo "============== SUMMARY ================"
+echo " Installed groups : $INSTALLED"
+echo " Failed groups    : $FAILED"
+echo "======================================="
+echo " ALL Done "
