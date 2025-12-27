@@ -53,59 +53,41 @@ rm -rf "$TMP_DIR"
 echo "[+] Final APK list:"
 ls -lh "$APK_DIR"
 
-# ===== 7. INSTALL APK =====
-cd "$APK_DIR" || exit 1
-INSTALLED=0
-FAILED=0
+# ===== 7. INSTALL APK (Silent + Fallback UI) =====
+echo
+echo "===== INSTALL APK ====="
+FOUND=0
 
-# Disable exit-on-error for APK install
-set +e
-
-for BASE in $(ls *.apk 2>/dev/null | sed 's/_.*//g' | sort -u); do
-    FILES=$(ls ${BASE}*.apk 2>/dev/null)
-    COUNT=$(echo "$FILES" | wc -l)
-
-    echo "----------------------------------"
-    echo "[INSTALL] $BASE ($COUNT file)"
-
-    if [ "$COUNT" -gt 1 ]; then
-        echo "    → Split APK detected"
-        if su -c "pm install-multiple $FILES"; then
-            echo "    ✓ Installed"
-            INSTALLED=$((INSTALLED+1))
-        else
-            echo "    ✗ Failed → fallback UI"
-            for apk in $FILES; do
-                am start -a android.intent.action.VIEW \
-                  -d "file://$APK_DIR/$apk" \
-                  -t application/vnd.android.package-archive || true
-                sleep 2
-            done
-            FAILED=$((FAILED+1))
-        fi
-    else
-        APK_FILE="$FILES"
-        echo "    → Single APK"
-        if su -c "pm install -r \"$APK_DIR/$APK_FILE\""; then
-            echo "    ✓ Installed"
-            INSTALLED=$((INSTALLED+1))
-        else
-            echo "    ✗ Failed → fallback UI"
-            am start -a android.intent.action.VIEW \
-              -d "file://$APK_DIR/$APK_FILE" \
-              -t application/vnd.android.package-archive || true
-            FAILED=$((FAILED+1))
-        fi
+for apk in "$APK_DIR"/*.apk; do
+    if [ ! -f "$apk" ]; then
+        continue
     fi
 
-    # Change Android ID / HWID
+    FOUND=1
+    echo "[+] Found APK: $apk"
+
+    echo "[*] Trying silent install (pm install)"
+    if su -c "pm install -r \"$apk\""; then
+        echo "[✓] Silent install OK"
+    else
+        echo "[!] Silent install FAILED"
+        echo "[*] Fallback: opening system installer (am start)"
+        am start -a android.intent.action.VIEW \
+          -d "file://$apk" \
+          -t application/vnd.android.package-archive || true
+        echo "[!] Please check installer UI"
+    fi
+
+    # Đổi Android ID / HWID
     su -c "settings put secure android_id f43f5764ee3f616a"
-    echo "    → HWID set to f43f5764ee3f616a"
+    echo "[*] HWID set to f43f5764ee3f616a"
+
+    echo "-----------------------------"
+    sleep 2
 done
 
-echo
-echo "============== SUMMARY ================"
-echo " Installed groups : $INSTALLED"
-echo " Failed groups    : $FAILED"
-echo "======================================="
-echo " ALL DONE "
+if [ "$FOUND" -eq 0 ]; then
+    echo "[X] No APK files found in folder!"
+fi
+
+echo "===== ALL DONE ====="
