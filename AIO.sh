@@ -27,16 +27,11 @@ line
 
 # ================== 2. TERMUX ENV ==================
 step "2/9" "Preparing Termux environment"
+rm -rf $PREFIX/var/lib/apt/lists/* $PREFIX/var/cache/apt/*
 
-rm -rf $PREFIX/var/lib/apt/lists/*
-rm -rf $PREFIX/var/cache/apt/*
-
-pkg update >/dev/null || warn "Repo update warning (ignored)"
-
-pkg install -y python python-pip android-tools curl >/dev/null || {
-  fail "Failed to install base packages"
-  exit 1
-}
+pkg update -y >/dev/null 2>&1
+pkg install -y python python-pip android-tools curl >/dev/null 2>&1 \
+  || { fail "Base packages install failed"; exit 1; }
 
 ok "Base packages ready"
 line
@@ -52,19 +47,22 @@ line
 step "4/9" "Installing Python libraries"
 for lib in requests rich prettytable pytz psutil gdown; do
   echo -ne "  • $lib ... "
-  pip install --no-cache-dir --quiet "$lib" \
-    && echo -e "${GREEN}OK${RESET}" \
-    || echo -e "${RED}FAIL${RESET}"
+  if pip install --no-cache-dir --quiet "$lib"; then
+    echo -e "${GREEN}OK${RESET}"
+  else
+    echo -e "${RED}FAIL${RESET}"
+  fi
 done
 line
 
 # ================== 5. TOOL ==================
 step "5/9" "Downloading tool"
-curl -fsSL \
-https://raw.githubusercontent.com/Wraith1vs11/Rejoin/refs/heads/main/OldShouko.py \
--o /sdcard/Download/OldShouko.py \
-&& ok "Tool downloaded" \
-|| warn "Tool download failed"
+if curl -fsSL https://raw.githubusercontent.com/Wraith1vs11/Rejoin/refs/heads/main/OldShouko.py \
+  -o /sdcard/Download/OldShouko.py; then
+  ok "Tool downloaded"
+else
+  warn "Tool download failed"
+fi
 line
 
 # ================== 6. ROOT ==================
@@ -77,10 +75,10 @@ ok "Root OK"
 line
 
 # ================== 7. HWID ==================
-step "7/9" "Changing Android ID (HWID)"
+step "7/9" "Changing Android ID"
 HWID="f43f5764ee3f616a"
 su -c "settings put secure android_id $HWID" >/dev/null 2>&1
-ok "Android ID set to $HWID"
+ok "Android ID set"
 line
 
 # ================== 8. UI / WINDOW ==================
@@ -93,48 +91,42 @@ su -c "settings put global force_desktop_mode_on_external_displays 1" >/dev/null
 ok "UI options applied"
 line
 
-# ===== 9. APK DOWNLOAD & INSTALL (FIXED) =====
+# ================== 9. APK DOWNLOAD & INSTALL ==================
 step "9/9" "Downloading & installing APKs"
 
-APK_DIR="/sdcard/Download/Farm-app"
+APK_DIR="/sdcard/Download/"
 rm -rf "$APK_DIR"
 mkdir -p "$APK_DIR"
 cd "$APK_DIR" || exit 1
 
-echo "  • Downloading APKs..."
-gdown --folder https://drive.google.com/drive/folders/16dE9WRhm53lh7STAOGnwWPZya_c9WxOc
+SUCCESS=0
+FAIL=0
 
-FOUND=0
+echo "  • Downloading APKs..."
+gdown --folder https://drive.google.com/drive/folders/16dE9WRhm53lh7STAOGnwWPZya_c9WxOc >/dev/null 2>&1
 
 for apk in *.apk; do
   [ -f "$apk" ] || continue
-  FOUND=1
 
   echo -e "${BLUE}→ Installing:${RESET} $apk"
 
   if su -c "pm install -r \"$APK_DIR/$apk\"" >/dev/null 2>&1; then
     ok "$apk installed (silent)"
+    SUCCESS=$((SUCCESS+1))
   else
-    warn "$apk silent failed → UI fallback"
+    warn "$apk silent failed → UI"
     am start -a android.intent.action.VIEW \
       -d "file://$APK_DIR/$apk" \
       -t application/vnd.android.package-archive >/dev/null 2>&1
+    FAIL=$((FAIL+1))
     sleep 2
   fi
 done
 
-if [ "$FOUND" -eq 0 ]; then
-  warn "No APK found"
-else
-  ok "APK process completed"
-fi
-ok "Silent success: $SUCCESS"
-warn "UI fallback: $FAIL"
-
 line
-ok "APK success: $SUCCESS"
-warn "APK fallback UI: $FAIL"
+ok "Silent installed: $SUCCESS app(s)"
+warn "UI fallback: $FAIL app(s)"
 
 echo
 echo -e "${GREEN}===== ALL DONE =====${RESET}"
-echo -e "${YELLOW}• Reboot recommended for full effect${RESET}"
+echo -e "${YELLOW}• Reboot recommended${RESET}"
