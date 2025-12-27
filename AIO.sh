@@ -25,30 +25,29 @@ termux-setup-storage >/dev/null 2>&1
 ok "Storage ready"
 line
 
-step "2/9" "Preparing Termux environment (hard-fix)"
+step "2/9" "Preparing Termux environment (ULTIMATE FIX)"
 
-# ===== HARD FIX FOR FRESH TERMUX / UGPHONE =====
-# đảm bảo repo tồn tại
-if [ ! -f "$PREFIX/etc/apt/sources.list" ]; then
-  warn "Fresh Termux detected → forcing repo setup"
-  termux-change-repo
-fi
+# ===== FORCE OFFICIAL REPO =====
+mkdir -p "$PREFIX/etc/apt"
 
-# dọn cache apt để tránh lỗi code 1
+cat > "$PREFIX/etc/apt/sources.list" <<'EOF'
+deb https://packages.termux.dev/apt/termux-main stable main
+EOF
+
+# dọn cache apt
 rm -rf "$PREFIX/var/lib/apt/lists/"*
 rm -rf "$PREFIX/var/cache/apt/"*
 
 # update repo (không cho kill script)
-pkg update -y >/dev/null 2>&1 || warn "pkg update warning (ignored)"
+apt update -y >/dev/null 2>&1 || warn "apt update warning (ignored)"
 
-# cài base packages (chỉ fail ở đây mới exit)
-if ! pkg install -y python python-pip android-tools curl >/dev/null 2>&1; then
+# cài base packages (chỉ chỗ này mới được fail)
+if ! apt install -y python python-pip android-tools curl >/dev/null 2>&1; then
   fail "Base packages install failed"
-  echo -e "${YELLOW}→ Re-run script and choose a different mirror${RESET}"
   exit 1
 fi
 
-ok "Base packages ready"
+ok "Base packages ready (forced repo)"
 line
 # ================== 3. PIP SAFE ==================
 step "3/9" "Preparing pip"
