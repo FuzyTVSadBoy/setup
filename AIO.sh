@@ -28,10 +28,29 @@ yes | pkg update
 . <(curl -fsSL https://raw.githubusercontent.com/Wraith1vs11/Rejoin/refs/heads/main/termux-change-repo.sh)
 yes | pkg upgrade
 
-# ===== 3. INSTALL PYTHON + TOOLS =====
-echo -e "${BLUE}[3/10] Installing Python & essential tools...${RESET}"
-yes | pkg install -y python python-pip android-tools curl wget
-pip install --upgrade pip
+# ===== 3. INSTALL PYTHON + PIP =====
+echo -e "${BLUE}[3/10] Installing Python & upgrading pip...${RESET}"
+yes | pkg install -y python python-pip
+if ! python -m pip install --upgrade pip --quiet; then
+    echo -e "${RED}[X] Failed to upgrade pip. Exiting.${RESET}"
+    exit 1
+fi
+echo -e "${GREEN}[✓] Python & pip ready${RESET}"
+
+# ===== 4. INSTALL PYTHON LIBRARIES (GỌN OUTPUT, CHECK ERROR) =====
+echo -e "${BLUE}[4/10] Installing Python libraries...${RESET}"
+PYLIBS=("requests" "rich" "prettytable" "pytz" "psutil" "gdown")
+export CFLAGS="-Wno-error=implicit-function-declaration"
+
+for lib in "${PYLIBS[@]}"; do
+    echo -e "${YELLOW}[*] Installing $lib...${RESET}"
+    if pip install --no-cache-dir --quiet "$lib"; then
+        echo -e "${GREEN}[✓] Installed $lib${RESET}"
+    else
+        echo -e "${RED}[X] Failed $lib. Exiting.${RESET}"
+        exit 1
+    fi
+done
 
 # ===== 4. INSTALL PYTHON LIBRARIES (GỌN OUTPUT) =====
 echo -e "${BLUE}[4/10] Installing Python libraries...${RESET}"
