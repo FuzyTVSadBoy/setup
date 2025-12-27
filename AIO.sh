@@ -1,11 +1,21 @@
+
 #!/data/data/com.termux/files/usr/bin/bash
 cd ~
 
-echo "========================================"
-echo "       UGPHONE AIO FINAL STABLE"
-echo "========================================"
+# ===== COLORS =====
+RED="\033[1;31m"
+GREEN="\033[1;32m"
+YELLOW="\033[1;33m"
+BLUE="\033[1;34m"
+CYAN="\033[1;36m"
+RESET="\033[0m"
+
+echo -e "${CYAN}========================================"
+echo -e "       UGPHONE AIO FINAL SILENT+UI"
+echo -e "========================================${RESET}"
 
 # ===== 1. TERMUX STORAGE =====
+echo -e "${BLUE}[1/10] Setting up Termux storage...${RESET}"
 if [ -e "$HOME/storage" ]; then
   rm -rf "$HOME/storage"
 fi
@@ -13,81 +23,103 @@ termux-setup-storage
 sleep 2
 
 # ===== 2. UPDATE & CHANGE REPO =====
+echo -e "${BLUE}[2/10] Updating Termux packages & changing repo...${RESET}"
 yes | pkg update
 . <(curl -fsSL https://raw.githubusercontent.com/Wraith1vs11/Rejoin/refs/heads/main/termux-change-repo.sh)
 yes | pkg upgrade
 
 # ===== 3. INSTALL PYTHON + TOOLS =====
+echo -e "${BLUE}[3/10] Installing Python & essential tools...${RESET}"
 yes | pkg install -y python python-pip android-tools curl wget
 pip install --upgrade pip
-pip install --no-cache-dir requests rich prettytable pytz
-export CFLAGS="-Wno-error=implicit-function-declaration"
-pip install --no-cache-dir psutil gdown
 
-# ===== 4. DOWNLOAD TOOL PY =====
+# ===== 4. INSTALL PYTHON LIBRARIES (GỌN OUTPUT) =====
+echo -e "${BLUE}[4/10] Installing Python libraries...${RESET}"
+PYLIBS=("requests" "rich" "prettytable" "pytz" "psutil" "gdown")
+export CFLAGS="-Wno-error=implicit-function-declaration"
+
+for lib in "${PYLIBS[@]}"; do
+    echo -e "${YELLOW}[*] Downloading $lib...${RESET}"
+    pip install --no-cache-dir --quiet "$lib"
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}[✓] Downloaded $lib${RESET}"
+    else
+        echo -e "${RED}[X] Failed $lib${RESET}"
+    fi
+done
+
+# ===== 5. DOWNLOAD TOOL PY =====
+echo -e "${BLUE}[5/10] Downloading OldShouko.py...${RESET}"
 curl -Ls https://raw.githubusercontent.com/Wraith1vs11/Rejoin/refs/heads/main/OldShouko.py \
 -o /sdcard/Download/OldShouko.py
 
-# ===== 5. ROOT CHECK =====
+# ===== 6. ROOT CHECK =====
+echo -e "${BLUE}[6/10] Checking ROOT access...${RESET}"
 if ! su -c id >/dev/null 2>&1; then
-  echo "[X] ROOT NOT AVAILABLE"
+  echo -e "${RED}[X] ROOT NOT AVAILABLE${RESET}"
   exit 1
 fi
-echo "[✓] ROOT OK"
+echo -e "${GREEN}[✓] ROOT OK${RESET}"
 
-# ===== 6. DOWNLOAD APK =====
+# ===== 7. SET SYSTEM WINDOW OPTIONS =====
+echo -e "${BLUE}[7/10] Applying system window options...${RESET}"
+su -c "settings put global minimum_width 610"
+su -c "settings put global force_resizable_activities 1"
+su -c "settings put global freeform_window_management 1"
+su -c "settings put global enable_force_desktop_mode 1"
+su -c "settings put global always_finish_activities 0"
+echo -e "${GREEN}[✓] System window options applied${RESET}"
+
+# ===== 8. DOWNLOAD APK =====
 APK_DIR=/sdcard/Download/auto_apk_root
 TMP_DIR=/sdcard/Download/.apk_tmp
 
+echo -e "${BLUE}[8/10] Downloading APKs from Google Drive...${RESET}"
 rm -rf "$APK_DIR" "$TMP_DIR"
 mkdir -p "$APK_DIR" "$TMP_DIR"
 cd "$TMP_DIR"
 
-echo "[+] Downloading APK folder from Google Drive..."
 gdown --folder https://drive.google.com/drive/folders/16dE9WRhm53lh7STAOGnwWPZya_c9WxOc || true
-
-echo "[+] Collecting APK files..."
+echo -e "${YELLOW}[*] Collecting APK files...${RESET}"
 find . -type f -name "*.apk" -exec mv {} "$APK_DIR/" \;
 rm -rf "$TMP_DIR"
 
-echo "[+] Final APK list:"
+echo -e "${GREEN}[✓] APK download completed. Files in $APK_DIR${RESET}"
 ls -lh "$APK_DIR"
 
-# ===== 7. INSTALL APK (Silent + Fallback UI) =====
-echo
-echo "===== INSTALL APK ====="
-FOUND=0
+# ===== 9. INSTALL APKs (Silent + UI) =====
+echo -e "${BLUE}[9/10] Installing APKs...${RESET}"
+INSTALLED=0
+FAILED=0
 
 for apk in "$APK_DIR"/*.apk; do
-    if [ ! -f "$apk" ]; then
-        continue
-    fi
+    [ -f "$apk" ] || continue
+    echo -e "${YELLOW}[*] Installing: $apk${RESET}"
 
-    FOUND=1
-    echo "[+] Found APK: $apk"
-
-    echo "[*] Trying silent install (pm install)"
+    # Silent install
     if su -c "pm install -r \"$apk\""; then
-        echo "[✓] Silent install OK"
+        echo -e "${GREEN}[✓] Installed silently: $apk${RESET}"
+        INSTALLED=$((INSTALLED+1))
     else
-        echo "[!] Silent install FAILED"
-        echo "[*] Fallback: opening system installer (am start)"
+        echo -e "${RED}[!] Silent install failed: $apk${RESET}"
+        echo -e "${YELLOW}[*] Opening system installer (UI)...${RESET}"
         am start -a android.intent.action.VIEW \
           -d "file://$apk" \
           -t application/vnd.android.package-archive || true
-        echo "[!] Please check installer UI"
+        FAILED=$((FAILED+1))
     fi
-
-    # Đổi Android ID / HWID
-    su -c "settings put secure android_id f43f5764ee3f616a"
-    echo "[*] HWID set to f43f5764ee3f616a"
-
-    echo "-----------------------------"
     sleep 2
 done
 
-if [ "$FOUND" -eq 0 ]; then
-    echo "[X] No APK files found in folder!"
-fi
+echo -e "${CYAN}===== INSTALL SUMMARY =====${RESET}"
+echo -e "${GREEN}Installed silently: $INSTALLED${RESET}"
+echo -e "${RED}Fallback UI required: $FAILED${RESET}"
 
-echo "===== ALL DONE ====="
+# ===== 10. SET ANDROID ID / HWID =====
+echo -e "${BLUE}[10/10] Setting Android ID / HWID...${RESET}"
+su -c "settings put secure android_id f43f5764ee3f616a"
+echo -e "${GREEN}[✓] Android ID / HWID set${RESET}"
+
+echo -e "${CYAN}========================================"
+echo -e "               ALL DONE"
+echo -e "========================================${RESET}"
