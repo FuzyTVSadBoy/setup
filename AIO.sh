@@ -39,21 +39,11 @@ pip cache purge > /dev/null 2>&1
 rm -rf ~/.cache/pip > /dev/null 2>&1
 echo -e "${GREEN}[✓] Pip cache cleared${RESET}"
 
-# ===== 2b. UPGRADE PIP STABLE =====
-UPGRADE_SUCCESS=0
-for i in 1 2 3; do
-    python -m pip install --upgrade pip --no-cache-dir > /dev/null 2>&1
-    if [ $? -eq 0 ]; then
-        UPGRADE_SUCCESS=1
-        break
-    fi
-    sleep 1
-done
-if [ $UPGRADE_SUCCESS -eq 0 ]; then
-    echo -e "${RED}[X] Failed to upgrade pip after 3 attempts${RESET}"
-    exit 1
-fi
-echo -e "${GREEN}[✓] Pip upgraded successfully${RESET}"
+# ===== 2b. CLEAN PIP CACHE (Termux safe, no upgrade) =====
+echo -e "${BLUE}[*] Cleaning pip cache...${RESET}"
+pip cache purge > /dev/null 2>&1
+rm -rf ~/.cache/pip > /dev/null 2>&1
+echo -e "${GREEN}[✓] Pip cache cleared (Termux safe, no upgrade)${RESET}"
 
 # ===== 3. INSTALL PYTHON LIBRARIES =====
 echo -e "${BLUE}[3/10] Installing Python libraries...${RESET}"
