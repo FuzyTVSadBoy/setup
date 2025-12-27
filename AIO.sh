@@ -31,9 +31,9 @@ step "2/9" "Preparing Termux environment"
 rm -rf $PREFIX/var/lib/apt/lists/*
 rm -rf $PREFIX/var/cache/apt/*
 
-pkg update || warn "Repo update warning (ignored)"
+pkg update >/dev/null || warn "Repo update warning (ignored)"
 
-pkg install -y python python-pip android-tools curl || {
+pkg install -y python python-pip android-tools curl >/dev/null || {
   fail "Failed to install base packages"
   exit 1
 }
@@ -96,47 +96,38 @@ line
 # ===== 9. APK DOWNLOAD & INSTALL (FIXED) =====
 step "9/9" "Downloading & installing APKs"
 
-TMP_APK="/data/local/tmp/apks"
-rm -rf "$TMP_APK"
-mkdir -p "$TMP_APK"
+APK_DIR="/sdcard/Download/Farm-app"
+rm -rf "$APK_DIR"
+mkdir -p "$APK_DIR"
+cd "$APK_DIR" || exit 1
 
-# gdown tải vào HOME, không phải APK_DIR
-gdown --folder \
-https://drive.google.com/drive/folders/16dE9WRhm53lh7STAOGnwWPZya_c9WxOc \
---quiet
+echo "  • Downloading APKs..."
+gdown --folder https://drive.google.com/drive/folders/16dE9WRhm53lh7STAOGnwWPZya_c9WxOc
 
-# Tìm apk thật sự
-APK_LIST=$(find $HOME -name "*.apk" 2>/dev/null)
+FOUND=0
 
-if [ -z "$APK_LIST" ]; then
-  fail "No APK files found"
-  exit 1
-fi
+for apk in *.apk; do
+  [ -f "$apk" ] || continue
+  FOUND=1
 
-SUCCESS=0
-FAIL=0
+  echo -e "${BLUE}→ Installing:${RESET} $apk"
 
-for apk in $APK_LIST; do
-  name=$(basename "$apk")
-  echo -e "${BLUE}→ Installing:${RESET} $name"
-
-  # copy về tmp
-  su -c "cp \"$apk\" $TMP_APK/$name"
-
-  # silent install
-  if su -c "pm install -r \"$TMP_APK/$name\"" >/dev/null 2>&1; then
-    ok "$name installed (silent)"
-    ((SUCCESS++))
+  if su -c "pm install -r \"$APK_DIR/$apk\"" >/dev/null 2>&1; then
+    ok "$apk installed (silent)"
   else
-    warn "$name silent failed → UI install"
+    warn "$apk silent failed → UI fallback"
     am start -a android.intent.action.VIEW \
-      -d "file://$apk" \
+      -d "file://$APK_DIR/$apk" \
       -t application/vnd.android.package-archive >/dev/null 2>&1
-    ((FAIL++))
     sleep 2
   fi
 done
 
+if [ "$FOUND" -eq 0 ]; then
+  warn "No APK found"
+else
+  ok "APK process completed"
+fi
 ok "Silent success: $SUCCESS"
 warn "UI fallback: $FAIL"
 
