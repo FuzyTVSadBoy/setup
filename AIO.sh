@@ -85,7 +85,7 @@ line
 
 # ================== 8. UI / WINDOW ==================
 step "8/9" "Applying UI & window settings"
-su -c "wm density 100" >/dev/null 2>&1
+su -c "wm density 200" >/dev/null 2>&1
 su -c "settings put global development_settings_enabled 1" >/dev/null 2>&1
 su -c "settings put global force_resizable_activities 1" >/dev/null 2>&1
 su -c "settings put global enable_freeform_support 1" >/dev/null 2>&1
