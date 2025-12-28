@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
-# ================== CẤU HÌNH UI (HARD FIX) ==================
+# ================== CẤU HÌNH UI ==================
 stty onlcr 2>/dev/null
 BLUE='\033[1;34m'
 GREEN='\033[1;32m'
@@ -9,16 +9,13 @@ RED='\033[1;31m'
 CYAN='\033[1;36m'
 RESET='\033[0m'
 
-step() { 
-    stty onlcr 2>/dev/null
-    echo -e "${BLUE}[*]${RESET} $2\r"; 
-}
+step() { stty onlcr 2>/dev/null; echo -e "${BLUE}[*]${RESET} $2\r"; }
 ok()   { echo -e "${GREEN}[✓]${RESET} $1\r"; }
 warn() { echo -e "${YELLOW}[!]${RESET} $1\r"; }
 line() { echo -e "${CYAN}------------------------------${RESET}\r"; }
 
 clear
-echo -e "${GREEN}===== UGPHONE AIO (DEEP CHECK SYSTEM) =====${RESET}\r"
+echo -e "${GREEN}===== UGPHONE AIO (PATH SAFE MODE) =====${RESET}\r"
 line
 
 # ================== 1. BỘ NHỚ ==================
@@ -30,91 +27,50 @@ line
 
 # ================== 2. HỆ THỐNG (DEEP CHECK) ==================
 step "2" "System Integrity Check"
-
-# 1. Thiết lập lại nguồn (Repo) để tránh link chết
-echo -e " -> Setting up stable mirrors...\r"
+# Đảm bảo môi trường luôn đúng
 mkdir -p "$PREFIX/etc/apt"
 echo "deb https://grimler.se/termux/termux-main stable main" > "$PREFIX/etc/apt/sources.list"
-
-# 2. Mở khóa dpkg (nếu bị kẹt từ lần trước)
 dpkg --configure -a >/dev/null 2>&1
-
-# 3. Cập nhật bắt buộc (Deep Update)
-# Không dùng 'if' để bỏ qua, phải chạy để đồng bộ thư viện
-echo -e " -> Updating package lists & core libs...\r"
 apt update -y >/dev/null 2>&1
-apt full-upgrade -y -o Dpkg::Options::="--force-confnew" >/dev/null 2>&1
-
-# 4. Cài đặt/Sửa chữa các gói cốt lõi
+# Cài đặt các gói cần thiết
 pkgs="python python-pip android-tools curl libexpat openssl"
-echo -e " -> Verifying dependencies ($pkgs)...\r"
 apt install -y --fix-missing $pkgs >/dev/null 2>&1
 
-# 5. KIỂM TRA THỰC TẾ (Functional Check)
-# Kiểm tra xem Python có chạy được không (check thư viện liên kết)
 if python --version >/dev/null 2>&1; then
-    # Kiểm tra tiếp pip
-    if pip --version >/dev/null 2>&1; then
-        ok "System Check Passed (Libs OK)"
-    else
-        echo -e "${YELLOW} -> Pip broken, reinstalling pip...${RESET}\r"
-        apt install --reinstall -y python-pip >/dev/null 2>&1
-        ok "System Repaired (Pip)"
-    fi
+    ok "System Libs Verified"
 else
-    # Nếu python lỗi (như lỗi libexpat ban đầu bạn gặp)
-    echo -e "${RED}[!] Python Libs Broken! Reinstalling Full Stack...${RESET}\r"
-    apt install --reinstall -y python libexpat openssl >/dev/null 2>&1
-    
-    # Check lại lần cuối
-    if python --version >/dev/null 2>&1; then
-        ok "System Repaired Successfully"
-    else
-        echo -e "${RED}[X] CRITICAL ERROR: System cannot run Python.${RESET}\r"
-        echo -e "Tip: Please Reset Cloud Phone Data.${RESET}\r"
-        exit 1
-    fi
+    echo -e "${RED}[!] Python missing. Reinstalling...${RESET}\r"
+    apt install --reinstall -y python libexpat >/dev/null 2>&1
+    ok "System Repaired"
 fi
 line
 
-# ================== 3. THƯ VIỆN & GDOWN ==================
-step "3" "Python Packages"
-
+# ================== 3. CHUẨN BỊ GDOWN ==================
+step "3" "Downloader Setup"
 pip cache purge >/dev/null 2>&1 || true
-rm -rf ~/.cache/pip >/dev/null 2>&1
-
-# Cài gdown và các libs
-echo -ne " -> Installing gdown & utils... \r"
+# Cài gdown
 pip install gdown requests rich --no-cache-dir --quiet >/dev/null 2>&1
-
-# Kiểm tra xem gdown có chạy được không
 if python -c "import gdown" >/dev/null 2>&1; then
-    ok "Modules Ready"
+    ok "Downloader Ready"
 else
-    echo -e "${YELLOW} -> Retrying gdown install...${RESET}\r"
     pip install gdown --force-reinstall >/dev/null 2>&1
-    ok "Modules Installed"
+    ok "Downloader Retry Done"
 fi
 line
 
 # ================== 4. TOOL ==================
 step "4" "Get Tool"
 mkdir -p "/sdcard/Download"
-# Dùng python tải để đảm bảo không lỗi SSL của curl cũ
 python -c "import urllib.request; urllib.request.urlretrieve('https://raw.githubusercontent.com/Wraith1vs11/Rejoin/refs/heads/main/OldShouko.py', '/sdcard/Download/OldShouko.py')" 2>/dev/null
 ok "Tool saved"
 line
 
 # ================== 5. ROOT & ID ==================
 step "5" "Root & ID Config"
-
-if su -c "id" >/dev/null 2>&1; then
-    ok "Root Access: YES"
-else
+if ! su -c "id" >/dev/null 2>&1; then
     echo -e "${RED}[X] NO ROOT ACCESS!${RESET}\r"
     exit 1
 fi
-
 HWID="f43f5764ee3f616a"
 su -c "settings put secure android_id $HWID" >/dev/null 2>&1
 stty onlcr 2>/dev/null
@@ -190,3 +146,4 @@ fi
 rm -rf "$TMP_ROOT"
 line
 echo -e "${GREEN}===== DONE (REBOOT NOW) =====${RESET}\r"
+
