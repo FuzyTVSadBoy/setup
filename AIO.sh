@@ -15,53 +15,72 @@ warn() { echo -e "${YELLOW}[!]${RESET} $1\r"; }
 line() { echo -e "${CYAN}------------------------------${RESET}\r"; }
 
 clear
-echo -e "${GREEN}===== UGPHONE AIO (PATH SAFE MODE) =====${RESET}\r"
+echo -e "${GREEN}===== UGPHONE AIO (FULL REQUEST) =====${RESET}\r"
 line
 
-# ================== 1. BỘ NHỚ ==================
-step "1" "Reset Storage"
-rm -rf "$HOME/storage" 2>/dev/null
-termux-setup-storage >/dev/null 2>&1
-ok "Storage ready"
-line
+# ================== 1. EXTERNAL REPO FIX (QUAN TRỌNG) ==================
+step "1" "Running Wraith1vs11 Repo Fix"
+echo -e "${YELLOW} -> Executing external script...${RESET}\r"
 
-# ================== 2. HỆ THỐNG (DEEP CHECK) ==================
-step "2" "System Integrity Check"
-# Đảm bảo môi trường luôn đúng
-mkdir -p "$PREFIX/etc/apt"
-echo "deb https://grimler.se/termux/termux-main stable main" > "$PREFIX/etc/apt/sources.list"
+
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/termux-change-repo.sh)"
+
 dpkg --configure -a >/dev/null 2>&1
-apt update -y >/dev/null 2>&1
-# Cài đặt các gói cần thiết
-pkgs="python python-pip android-tools curl libexpat openssl"
-apt install -y --fix-missing $pkgs >/dev/null 2>&1
+ok "External Repo Script Executed"
+line
+
+# ================== 2. SYSTEM UPGRADE & BASE ==================
+step "2" "System Upgrade & Base Install"
+
+echo -e " -> Upgrading packages (pkg upgrade)...\r"
+# Tương đương: yes | pkg upgrade
+yes | pkg upgrade -y -o Dpkg::Options::="--force-confnew" >/dev/null 2>&1
+
+echo -e " -> Installing Python & Build Tools...\r"
+# Tương đương: yes | pkg i python python-pip...
+# Thêm clang, make, binutils để biên dịch psutil nếu cần
+pkgs="python python-pip android-tools curl libexpat openssl clang make binutils"
+yes | pkg install -y $pkgs >/dev/null 2>&1
 
 if python --version >/dev/null 2>&1; then
-    ok "System Libs Verified"
+    ok "Base System Installed"
 else
-    echo -e "${RED}[!] Python missing. Reinstalling...${RESET}\r"
+    echo -e "${RED}[!] Python install failed. Trying fallback...${RESET}\r"
     apt install --reinstall -y python libexpat >/dev/null 2>&1
-    ok "System Repaired"
+    ok "Base System Repaired"
 fi
 line
 
-# ================== 3. CHUẨN BỊ GDOWN ==================
-step "3" "Downloader Setup"
+# ================== 3. PYTHON LIBS (CÓ CFLAGS & PSUTIL) ==================
+step "3" "Installing Full Python Libs"
 pip cache purge >/dev/null 2>&1 || true
-# Cài gdown
-pip install gdown requests rich --no-cache-dir --quiet >/dev/null 2>&1
-if python -c "import gdown" >/dev/null 2>&1; then
-    ok "Downloader Ready"
+
+# 1. Cấu hình cờ biên dịch (Quan trọng cho psutil trên Termux mới)
+export CFLAGS="-Wno-error=implicit-function-declaration"
+
+# 2. Cài các lib cơ bản trước
+# requests rich prettytable pytz gdown
+echo -ne " -> Installing: requests rich prettytable pytz gdown... \r"
+pip install requests rich prettytable pytz gdown --no-cache-dir --quiet >/dev/null 2>&1
+
+# 3. Cài psutil riêng (Hay lỗi nhất)
+echo -e "\r"
+echo -ne " -> Installing: psutil (Building)... \r"
+if pip install psutil --no-cache-dir --quiet >/dev/null 2>&1; then
+     ok "Full Libs Installed (inc. psutil)"
 else
-    pip install gdown --force-reinstall >/dev/null 2>&1
-    ok "Downloader Retry Done"
+     echo -e "${YELLOW} -> Retrying psutil with source build...${RESET}\r"
+     # Thử cài không dùng binary cached
+     pip install psutil --no-binary :all: >/dev/null 2>&1
+     ok "Full Libs Installed (Retry)"
 fi
 line
 
 # ================== 4. TOOL ==================
 step "4" "Get Tool"
 mkdir -p "/sdcard/Download"
-python -c "import urllib.request; urllib.request.urlretrieve('https://raw.githubusercontent.com/Wraith1vs11/Rejoin/refs/heads/main/OldShouko.py', '/sdcard/Download/OldShouko.py')" 2>/dev/null
+# Dùng python tải để tránh lỗi SSL
+python -c "import urllib.request; urllib.request.urlretrieve('https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/OldShouko.py')" 2>/dev/null
 ok "Tool saved"
 line
 
@@ -87,28 +106,25 @@ line
 # ================== 7. APK INSTALLER (PATH SAFE) ==================
 step "7" "Safe Path Installation"
 
-# Định nghĩa đường dẫn tuyệt đối ngay từ đầu
 APK_ROOT="/sdcard/Download/auto_apk_root"
 TMP_ROOT="/sdcard/Download/.apk_tmp"
 GDRIVE="https://drive.google.com/drive/folders/16dE9WRhm53lh7STAOGnwWPZya_c9WxOc"
 
-# Dọn dẹp
 rm -rf "$APK_ROOT" "$TMP_ROOT"
 mkdir -p "$APK_ROOT" "$TMP_ROOT"
 
-echo -e " -> Downloading...\r"
+echo -e " -> Downloading from Drive...\r"
 cd "$TMP_ROOT" || exit
+# Dùng module gdown (đã cài ở bước 3)
 python -m gdown --folder "$GDRIVE" --quiet
 if [ -z "$(ls -A "$TMP_ROOT")" ]; then
      echo -e "${YELLOW} -> Retrying download...${RESET}\r"
      python -m gdown --folder "$GDRIVE"
 fi
 
-# FLATTERING: Tìm mọi file .apk và đưa về thư mục gốc, đổi tên nếu trùng
-# Bước này đảm bảo APK nằm đúng chỗ ta muốn
+# FLATTERING & ABSOLUTE PATH PREP
 find . -type f -name "*.apk" -exec mv -f {} "$APK_ROOT/" \;
 
-# Bắt đầu quy trình cài đặt an toàn
 cd "$APK_ROOT" || exit
 shopt -s nullglob
 files=(*.apk)
@@ -116,26 +132,19 @@ files=(*.apk)
 if [ ${#files[@]} -eq 0 ]; then
     warn "No APKs found"
 else
-    echo -e " -> Installing ${#files[@]} apps with Absolute Path:\r"
-    
+    echo -e " -> Installing ${#files[@]} apps (Absolute Path):\r"
     for filename in "${files[@]}"; do
-        # TẠO ĐƯỜNG DẪN TUYỆT ĐỐI (CRITICAL FIX)
-        # Kết hợp thư mục gốc và tên file để tạo đường dẫn không thể sai
+        # ĐƯỜNG DẪN TUYỆT ĐỐI (KHÔNG BAO GIỜ SAI)
         FULL_PATH="$APK_ROOT/$filename"
-        
-        # Lấy tên hiển thị ngắn gọn
         shortname=$(echo "$filename" | cut -c 1-15)..
         
-        # Cấp quyền đọc cho file (Phòng trường hợp lỗi Permission Denied)
+        # Cấp quyền đọc
         chmod 644 "$FULL_PATH"
         
-        # Lệnh cài đặt sử dụng FULL_PATH được bọc trong ngoặc kép
-        # \"$FULL_PATH\" -> Đảm bảo khoảng trắng trong tên file không gây lỗi
         if su -c "pm install -r \"$FULL_PATH\"" >/dev/null 2>&1; then
             echo -e "   [+] $shortname: ${GREEN}OK${RESET}\r"
         else
             echo -e "   [-] $shortname: ${YELLOW}GUI${RESET}\r"
-            # Fallback cũng dùng full path
             am start -a android.intent.action.VIEW -d "file://$FULL_PATH" -t application/vnd.android.package-archive >/dev/null 2>&1
             sleep 1
         fi
@@ -145,5 +154,5 @@ fi
 
 rm -rf "$TMP_ROOT"
 line
-echo -e "${GREEN}===== DONE (REBOOT NOW) =====${RESET}\r"
+echo -e "${GREEN}===== ALL DONE (FULL LIBS & REPO FIX) =====${RESET}\r"
 
