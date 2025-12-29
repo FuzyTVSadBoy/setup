@@ -79,8 +79,7 @@ line
 # ================== 4. TOOL ==================
 step "4" "Get Tool"
 mkdir -p "/sdcard/Download"
-# Dùng python tải để tránh lỗi SSL
-python -c "import urllib.request; urllib.request.urlretrieve('https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/OldShouko.py')" 2>/dev/null
+curl -Ls "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/OldShouko.py" -o /sdcard/Download/OldShouko.py 2>/dev/null
 ok "Tool saved"
 line
 
