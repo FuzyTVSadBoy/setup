@@ -1768,17 +1768,20 @@ def main():
             WebhookManager.setup_webhook()
             input("\033[1;32m\nPress Enter to exit...\033[0m")
             continue
-
+            
         elif setup_type == "5":
             try:
+                # Script Lua Mới
                 LUA_SRC = r"""local TOOL_URL="http://127.0.0.1:5000/api/heartbeat";local req=(syn and syn.request)or(http and http.request)or http_request or request;if not req then return end;local Plr=game:GetService("Players").LocalPlayer;if not Plr then return end;local UID=tostring(Plr.UserId);local TS=game:GetService("TeleportService");local function send(s)pcall(function()req({Url=TOOL_URL,Method="POST",Headers={["Content-Type"]="application/json"},Body=game:GetService("HttpService"):JSONEncode({userId=UID,status=s,placeId=game.PlaceId,jobId=game.JobId})})end)end;TS.Teleporting:Connect(function()send("TELEPORT")end);game:BindToClose(function()send("SHUTDOWN");task.wait(0.5)end);task.spawn(function()send("ALIVE");while true do task.wait(2);send("ALIVE")end end)""".strip()
                 
                 print("\033[1;32m[1] Heartbeat Check (Recommended)\033[0m")
                 choice = input("Select (1/q): ").strip()
                 
+                # Logic đơn giản: Luôn dùng Heartbeat (trừ khi chọn 2)
                 globals()["check_exec_enable"] = "1"
                 globals()["lua_script_template"] = LUA_SRC
                 
+                # Ghi file
                 cfg_file = os.path.join("Shouko.dev", "checkui.lua")
                 os.makedirs("Shouko.dev", exist_ok=True)
                 with open(cfg_file, "w") as f: f.write(LUA_SRC)
@@ -1786,52 +1789,13 @@ def main():
                 globals()["command_8_configured"] = True
                 FileManager.save_config()
                 print("\033[1;32mDone! Script updated.\033[0m")
-            except Exception as e: print(f"Error: {e}")
-            input("Enter..."); continue
-            
-                if config_choice.lower() == "q" or config_choice == "1":
-                    globals()["check_exec_enable"] = "1"
-                    globals()["lua_script_template"] = LUA_HEARTBEAT_SCRIPT
-                    print("\033[1;32m[ Shouko.dev ] - Set to Heartbeat Check Mode.\033[0m")
-                
-                elif config_choice == "2":
-                    globals()["check_exec_enable"] = "0"
-                    globals()["lua_script_template"] = None
-                    print("\033[1;36m[ Shouko.dev ] - Set to Online Check (Old Method).\033[0m")
-                
-                else:
-                    print("\033[1;31m[ Shouko.dev ] - Invalid choice. Defaulting to Heartbeat.\033[0m")
-                    globals()["check_exec_enable"] = "1"
-                    globals()["lua_script_template"] = LUA_HEARTBEAT_SCRIPT
 
-                # Ghi script ra file
-                config_file = os.path.join("Shouko.dev", "checkui.lua")
-                if globals()["lua_script_template"]:
-                    try:
-                        os.makedirs("Shouko.dev", exist_ok=True)
-                        with open(config_file, "w") as f:
-                            f.write(globals()["lua_script_template"])
-                        print(f"\033[1;36m[ Shouko.dev ] - Script updated to {config_file}\033[0m")
-                    except Exception as e:
-                        print(f"\033[1;31m[ Shouko.dev ] - Error saving script: {e}\033[0m")
-                else:
-                    if os.path.exists(config_file):
-                        try:
-                            os.remove(config_file)
-                            print(f"\033[1;36m[ Shouko.dev ] - Removed checkui.lua (Online Mode)\033[0m")
-                        except: pass
-
-                globals()["command_8_configured"] = True
-                FileManager.save_config()
-                print("\033[1;32m[ Shouko.dev ] - Configuration saved.\033[0m")
+            except Exception as e: 
+                print(f"Error: {e}")
             
-            except Exception as e:
-                print(f"\033[1;31m[ Shouko.dev ] - Error: {e}\033[0m")
-            
-            input("\033[1;32mPress Enter to return...\033[0m")
+            input("Enter...")
             continue
             
-
         elif setup_type == "6":
             try:
                 current_prefix = globals().get("package_prefix", "com.roblox")
