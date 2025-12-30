@@ -1,8 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
-# ================== CẤU HÌNH UI (CLASSIC) ==================
+# ================== CẤU HÌNH UI ==================
 stty onlcr 2>/dev/null
-
 BLUE='\033[1;34m'
 GREEN='\033[1;32m'
 YELLOW='\033[1;33m'
@@ -17,102 +16,94 @@ fail() { echo -e "${RED}[X]${RESET} $1\r"; }
 line() { echo -e "${CYAN}------------------------------${RESET}\r"; }
 
 clear
-echo -e "${GREEN}===== UGPHONE AIO (REPAIR & FIX) =====${RESET}\r"
+echo -e "${GREEN}===== UGPHONE AIO (USER CORE) =====${RESET}\r"
 line
 
 # ================== 1. BỘ NHỚ ==================
 step "1/7" "Reset Storage"
-rm -rf "$HOME/storage" 2>/dev/null
+# Code gốc của bạn
+if [ -e "/data/data/com.termux/files/home/storage" ]; then
+    rm -rf /data/data/com.termux/files/home/storage
+fi
 termux-setup-storage >/dev/null 2>&1
 ok "Storage ready"
 line
 
-# ================== 2. REPO SETUP (MANUAL FIX) ==================
-step "2/7" "Configuring Repository"
-
-# FIX: Script ngoài bị lỗi, ta cấu hình trực tiếp vào Grimler (Ổn định nhất)
-echo -e " -> Setting up Grimler Mirror...\r"
-mkdir -p "$PREFIX/etc/apt"
-echo "deb https://grimler.se/termux/termux-main stable main" > "$PREFIX/etc/apt/sources.list"
-
-# Mở khóa dpkg
-dpkg --configure -a >/dev/null 2>&1
-ok "Repo Configured (Grimler)"
-line
-
-# ================== 3. SYSTEM INSTALL (APT-GET FORCE) ==================
-step "3/7" "System Upgrade & Python"
+# ================== 2. REPO & UPGRADE ==================
+step "2/7" "Repo & System Upgrade"
 
 echo -e " -> Updating package lists...\r"
-# Dùng apt-get update thay vì pkg
-apt-get update -y -o Dpkg::Options::="--force-confnew" >/dev/null 2>&1
+yes | pkg update -y >/dev/null 2>&1
 
-echo -e " -> Installing Python & Core...\r"
-# FIX: Dùng apt-get install -y để tránh lỗi Broken pipe
-pkgs="python python-pip android-tools curl binutils clang make libexpat openssl"
-apt-get install -y $pkgs >/dev/null 2>&1
+echo -e " -> Config Repo (FuzyTVSadBoy)...\r"
+# Lệnh curl repo của bạn
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/termux-change-repo.sh)" >/dev/null 2>&1
 
-# Refresh lại đường dẫn lệnh
-hash -r
+echo -e " -> Upgrading system (pkg upgrade)...\r"
+# Lệnh upgrade của bạn
+yes | pkg upgrade -y -o Dpkg::Options::="--force-confnew" >/dev/null 2>&1
+
+ok "System Upgraded"
+line
+
+# ================== 3. PYTHON SETUP ==================
+step "3/7" "Installing Python"
+
+echo -e " -> Installing Python & Pip...\r"
+# Lệnh cài python của bạn (thêm clang/make để build psutil)
+yes | pkg install -y python python-pip clang make binutils >/dev/null 2>&1
 
 if python --version >/dev/null 2>&1; then
-    ok "Python Installed Success"
+    ok "Python Installed"
 else
-    echo -e "${RED}[!] Python missing. Force Repairing...${RESET}\r"
-    # Thử cài lại bằng dpkg force
-    apt-get install -y --reinstall python libexpat openssl >/dev/null 2>&1
-    if python --version >/dev/null 2>&1; then
-         ok "Python Repaired"
-    else
-         fail "FATAL: Python could not be installed!"
-         exit 1
-    fi
+    fail "Python Install Failed!"
+    exit 1
 fi
 line
 
-# ================== 4. PYTHON LIBS ==================
+# ================== 4. LIBS & PSUTIL (FIX) ==================
 step "4/7" "Installing Libraries"
 pip cache purge >/dev/null 2>&1 || true
+
+# 1. Cài các libs thường
+echo -ne " -> Installing requests, rich... \r"
+pip install requests rich prettytable pytz gdown --no-cache-dir --quiet >/dev/null 2>&1
+
+# 2. Cài psutil với CFLAGS (Lệnh chuẩn của bạn)
+echo -ne " -> Installing psutil (CFLAGS)... \r"
 export CFLAGS="-Wno-error=implicit-function-declaration"
-
-libs="requests rich prettytable pytz gdown"
-echo -ne " -> Installing: $libs ... \r"
-# Cài đặt silent, không hiện output dài dòng
-if pip install $libs --no-cache-dir --quiet >/dev/null 2>&1; then
-    echo -e "${GREEN}OK${RESET}\r"
-else
-    echo -e "${YELLOW}RETRY${RESET}\r"
-    pip install $libs --no-cache-dir >/dev/null 2>&1
-fi
-
-echo -ne " -> Installing: psutil ... \r"
 if pip install psutil --no-cache-dir --quiet >/dev/null 2>&1; then
     echo -e "${GREEN}OK${RESET}\r"
 else
-    echo -e "${YELLOW}BUILDING${RESET}\r"
-    pip install psutil --no-binary :all: >/dev/null 2>&1
+    # Fallback nhẹ nếu vẫn lỗi
+    pip install psutil --no-binary :all: --quiet >/dev/null 2>&1
+    echo -e "${YELLOW}OK (Source)${RESET}\r"
 fi
-ok "Libraries Ready"
+ok "All Libraries Ready"
 line
 
-# ================== 5. TOOL (NEW LINK) ==================
+# ================== 5. DOWNLOAD TOOL ==================
 step "5/7" "Downloading Tool"
 mkdir -p "/sdcard/Download"
 
-# Link mới bạn yêu cầu
-TOOL_URL="https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/OldShouko.py"
-TOOL_PATH="/sdcard/Download/OldShouko.py"
+# Lệnh curl tool của bạn
+curl -Ls "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/OldShouko.py" -o /sdcard/Download/OldShouko.py
 
-python -c "import urllib.request; urllib.request.urlretrieve('$TOOL_URL', '$TOOL_PATH')" 2>/dev/null
-ok "Tool Saved"
+if [ -f "/sdcard/Download/OldShouko.py" ]; then
+    ok "Tool Saved"
+else
+    fail "Download Tool Failed"
+fi
 line
 
 # ================== 6. DEVICE CONFIG ==================
 step "6/7" "Device Config"
+
 if ! su -c "id" >/dev/null 2>&1; then
     fail "NO ROOT ACCESS!"
     exit 1
 fi
+
 HWID="f43f5764ee3f616a"
 su -c "settings put secure android_id $HWID" >/dev/null 2>&1
 ok "ID Set: ...616a"
@@ -121,7 +112,7 @@ su -c "wm density 200; settings put global development_settings_enabled 1; setti
 ok "Window Optimized"
 line
 
-# ================== 7. APK INSTALLER ==================
+# ================== 7. APK INSTALLER (AUTO-RENAME) ==================
 step "7/7" "Installing APKs"
 
 APK_ROOT="/sdcard/Download/auto_apk_root"
@@ -131,12 +122,19 @@ GDRIVE="https://drive.google.com/drive/folders/16dE9WRhm53lh7STAOGnwWPZya_c9WxOc
 rm -rf "$APK_ROOT" "$TMP_ROOT"
 mkdir -p "$APK_ROOT" "$TMP_ROOT"
 
-echo -e " -> Downloading from Drive...\r"
+echo -e "${YELLOW} -> Downloading from Drive (Please wait)...${RESET}\r"
 cd "$TMP_ROOT" || exit
-# Hiện thanh tải xuống (bỏ quiet) để bạn thấy tiến trình
-python -m gdown --folder "$GDRIVE"
+# Tải xuống im lặng
+python -m gdown --folder "$GDRIVE" --quiet >/dev/null 2>&1
 
-find . -type f -name "*.apk" -exec mv -f {} "$APK_ROOT/" \;
+# ========================================================
+# FIX LỖI ">" & SAI ĐƯỜNG DẪN: Đổi tên file tự động
+# ========================================================
+find . -type f -name "*.apk" | while read filename; do
+    # Đổi tên file chứa ký tự lạ thành dấu gạch dưới
+    safe_name=$(echo "$filename" | sed 's/[^a-zA-Z0-9.]/_/g')
+    mv "$filename" "$APK_ROOT/$safe_name"
+done
 
 cd "$APK_ROOT" || exit
 shopt -s nullglob
@@ -145,7 +143,8 @@ files=(*.apk)
 if [ ${#files[@]} -eq 0 ]; then
     warn "No APKs Found"
 else
-    echo -e " -> Installing ${#files[@]} apps:\r"
+    echo -e " -> Installing ${#files[@]} App(s):\r"
+    
     for filename in "${files[@]}"; do
         FULL_PATH="$APK_ROOT/$filename"
         shortname=$(echo "$filename" | cut -c 1-20)..
@@ -166,3 +165,5 @@ fi
 rm -rf "$TMP_ROOT"
 line
 echo -e "${GREEN}===== ALL DONE =====${RESET}\r"
+echo -e "${YELLOW}Reboot Device Now!${RESET}\r"
+
