@@ -16,12 +16,11 @@ fail() { echo -e "${RED}[X]${RESET} $1\r"; }
 line() { echo -e "${CYAN}------------------------------${RESET}\r"; }
 
 clear
-echo -e "${GREEN}===== UGPHONE AIO (USER CORE) =====${RESET}\r"
+echo -e "${GREEN}===== UGPHONE AIO (SIMPLE FIX) =====${RESET}\r"
 line
 
 # ================== 1. BỘ NHỚ ==================
 step "1/7" "Reset Storage"
-# Code gốc của bạn
 if [ -e "/data/data/com.termux/files/home/storage" ]; then
     rm -rf /data/data/com.termux/files/home/storage
 fi
@@ -29,20 +28,19 @@ termux-setup-storage >/dev/null 2>&1
 ok "Storage ready"
 line
 
-# ================== 2. REPO & UPGRADE ==================
-step "2/7" "Repo & System Upgrade"
+# ================== 2. REPO SETUP ==================
+step "2/7" "Repo & Upgrade"
 
 echo -e " -> Updating package lists...\r"
-yes | pkg update -y >/dev/null 2>&1
+# Dùng -y chuẩn thay vì 'yes|'
+pkg update -y >/dev/null 2>&1
 
 echo -e " -> Config Repo (FuzyTVSadBoy)...\r"
-# Lệnh curl repo của bạn
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/termux-change-repo.sh)" >/dev/null 2>&1
 
-echo -e " -> Upgrading system (pkg upgrade)...\r"
-# Lệnh upgrade của bạn
-yes | pkg upgrade -y -o Dpkg::Options::="--force-confnew" >/dev/null 2>&1
-
+echo -e " -> Upgrading system...\r"
+# Dùng -y chuẩn
+pkg upgrade -y -o Dpkg::Options::="--force-confnew" >/dev/null 2>&1
 ok "System Upgraded"
 line
 
@@ -50,43 +48,47 @@ line
 step "3/7" "Installing Python"
 
 echo -e " -> Installing Python & Pip...\r"
-# Lệnh cài python của bạn (thêm clang/make để build psutil)
-yes | pkg install -y python python-pip clang make binutils >/dev/null 2>&1
+# Dùng -y chuẩn, cài đủ gói cần thiết
+pkg install -y python python-pip clang make binutils >/dev/null 2>&1
 
 if python --version >/dev/null 2>&1; then
     ok "Python Installed"
 else
-    fail "Python Install Failed!"
-    exit 1
+    # Fallback nếu pkg lỗi thì dùng apt
+    apt install -y python python-pip >/dev/null 2>&1
+    if python --version >/dev/null 2>&1; then
+         ok "Python Installed (Apt)"
+    else
+         fail "Python Install Failed!"
+         exit 1
+    fi
 fi
 line
 
-# ================== 4. LIBS & PSUTIL (FIX) ==================
+# ================== 4. LIBS & PSUTIL ==================
 step "4/7" "Installing Libraries"
 pip cache purge >/dev/null 2>&1 || true
 
-# 1. Cài các libs thường
-echo -ne " -> Installing requests, rich... \r"
+echo -ne " -> Installing base libs... \r"
 pip install requests rich prettytable pytz gdown --no-cache-dir --quiet >/dev/null 2>&1
 
-# 2. Cài psutil với CFLAGS (Lệnh chuẩn của bạn)
 echo -ne " -> Installing psutil (CFLAGS)... \r"
 export CFLAGS="-Wno-error=implicit-function-declaration"
 if pip install psutil --no-cache-dir --quiet >/dev/null 2>&1; then
     echo -e "${GREEN}OK${RESET}\r"
 else
-    # Fallback nhẹ nếu vẫn lỗi
+    # Fallback
     pip install psutil --no-binary :all: --quiet >/dev/null 2>&1
     echo -e "${YELLOW}OK (Source)${RESET}\r"
 fi
-ok "All Libraries Ready"
+ok "Libraries Ready"
 line
 
-# ================== 5. DOWNLOAD TOOL ==================
+# ================== 5. DOWNLOAD TOOL (SIMPLE) ==================
 step "5/7" "Downloading Tool"
 mkdir -p "/sdcard/Download"
 
-# Lệnh curl tool của bạn
+# Tải bằng curl đơn giản như bạn yêu cầu
 curl -Ls "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/OldShouko.py" -o /sdcard/Download/OldShouko.py
 
 if [ -f "/sdcard/Download/OldShouko.py" ]; then
@@ -98,12 +100,10 @@ line
 
 # ================== 6. DEVICE CONFIG ==================
 step "6/7" "Device Config"
-
 if ! su -c "id" >/dev/null 2>&1; then
     fail "NO ROOT ACCESS!"
     exit 1
 fi
-
 HWID="f43f5764ee3f616a"
 su -c "settings put secure android_id $HWID" >/dev/null 2>&1
 ok "ID Set: ...616a"
@@ -124,14 +124,10 @@ mkdir -p "$APK_ROOT" "$TMP_ROOT"
 
 echo -e "${YELLOW} -> Downloading from Drive (Please wait)...${RESET}\r"
 cd "$TMP_ROOT" || exit
-# Tải xuống im lặng
 python -m gdown --folder "$GDRIVE" --quiet >/dev/null 2>&1
 
-# ========================================================
-# FIX LỖI ">" & SAI ĐƯỜNG DẪN: Đổi tên file tự động
-# ========================================================
+# Auto-Rename để tránh lỗi ">"
 find . -type f -name "*.apk" | while read filename; do
-    # Đổi tên file chứa ký tự lạ thành dấu gạch dưới
     safe_name=$(echo "$filename" | sed 's/[^a-zA-Z0-9.]/_/g')
     mv "$filename" "$APK_ROOT/$safe_name"
 done
@@ -144,13 +140,11 @@ if [ ${#files[@]} -eq 0 ]; then
     warn "No APKs Found"
 else
     echo -e " -> Installing ${#files[@]} App(s):\r"
-    
     for filename in "${files[@]}"; do
         FULL_PATH="$APK_ROOT/$filename"
         shortname=$(echo "$filename" | cut -c 1-20)..
         
         chmod 644 "$FULL_PATH"
-        
         if su -c "pm install -r \"$FULL_PATH\"" >/dev/null 2>&1; then
             echo -e "   [+] $shortname: ${GREEN}OK${RESET}\r"
         else
@@ -166,4 +160,3 @@ rm -rf "$TMP_ROOT"
 line
 echo -e "${GREEN}===== ALL DONE =====${RESET}\r"
 echo -e "${YELLOW}Reboot Device Now!${RESET}\r"
-
