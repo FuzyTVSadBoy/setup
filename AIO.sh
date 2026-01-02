@@ -16,7 +16,7 @@ fail() { echo -e "${RED}[X]${RESET} $1\r"; }
 line() { echo -e "${CYAN}------------------------------${RESET}\r"; }
 
 clear
-echo -e "${GREEN}===== UGPHONE AIO (AUTO UPDATE) =====${RESET}\r"
+echo -e "${GREEN}===== UGPHONE AIO (FINAL UI FIX) =====${RESET}\r"
 line
 
 # ================== 1. BỘ NHỚ ==================
@@ -101,7 +101,7 @@ su -c "wm density 200; settings put global development_settings_enabled 1; setti
 ok "Window Optimized"
 line
 
-# ================== 7. APK INSTALLER (SMART PYTHON) ==================
+# ================== 7. APK INSTALLER (PYTHON UI FIX) ==================
 step "7/7" "Installing APKs"
 
 APK_ROOT="/sdcard/Download/auto_apk_root"
@@ -111,14 +111,16 @@ mkdir -p "$APK_ROOT"
 echo -e "${YELLOW} -> Downloading Folder from Drive...${RESET}\r"
 
 # ------------------------------------------------------------------
-# TẠO SCRIPT PYTHON ĐỂ TẢI VÀ ĐỔI TÊN FILE (THÔNG MINH HƠN BASH)
+# PYTHON DOWNLOADER (FIXED UI)
 # ------------------------------------------------------------------
 cat <<EOF > downloader.py
 import gdown
 import os
 import shutil
 import re
+import sys
 
+# URL Folder Drive của bạn
 url = "https://drive.google.com/drive/folders/16dE9WRhm53lh7STAOGnwWPZya_c9WxOc"
 output_dir = "/sdcard/Download/.apk_tmp_py"
 final_dir = "/sdcard/Download/auto_apk_root"
@@ -127,36 +129,43 @@ if os.path.exists(output_dir):
     shutil.rmtree(output_dir)
 os.makedirs(output_dir)
 
+def log(msg):
+    # Hàm in có ký tự về đầu dòng để tránh bậc thang
+    print(msg + "\r")
+
 try:
-    # Tải folder bằng thư viện python (ổn định hơn lệnh cli)
-    print("    Starting download...")
+    log("    Starting download...")
+    # Tải im lặng
     files = gdown.download_folder(url, output=output_dir, quiet=True, use_cookies=False)
     
     if not files:
-        print("    [!] No files returned. Trying with cookies...")
+        log("    [!] Retry with cookies...")
         files = gdown.download_folder(url, output=output_dir, quiet=True, use_cookies=True)
 
-    print(f"    Downloaded {len(files)} files.")
+    if not files:
+        log("    [X] No files found!")
+    else:
+        log(f"    Downloaded {len(files)} file(s).")
+        
+        count = 0
+        for file_path in files:
+            if file_path.endswith(".apk"):
+                filename = os.path.basename(file_path)
+                safe_name = re.sub(r'[^a-zA-Z0-9.]', '_', filename)
+                shutil.move(file_path, os.path.join(final_dir, safe_name))
+                count += 1
+        
+        log(f"    Prepared {count} APK(s) for installation.")
 
-    for file_path in files:
-        if file_path.endswith(".apk"):
-            filename = os.path.basename(file_path)
-            # Logic đổi tên an toàn: Chỉ giữ lại chữ và số
-            safe_name = re.sub(r'[^a-zA-Z0-9.]', '_', filename)
-            
-            # Di chuyển sang thư mục gốc
-            shutil.move(file_path, os.path.join(final_dir, safe_name))
-            print(f"    Prepared: {safe_name}")
-
-    # Dọn dẹp
-    shutil.rmtree(output_dir)
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
 
 except Exception as e:
-    print(f"    [X] Error: {e}")
+    log(f"    [X] Error: {e}")
 EOF
 # ------------------------------------------------------------------
 
-# Chạy script python vừa tạo
+# Chạy Python script
 python downloader.py
 rm downloader.py
 
@@ -166,7 +175,7 @@ shopt -s nullglob
 files=(*.apk)
 
 if [ ${#files[@]} -eq 0 ]; then
-    warn "No APKs Found in Folder"
+    warn "No APKs Found"
 else
     echo -e " -> Installing ${#files[@]} App(s):\r"
     for filename in "${files[@]}"; do
