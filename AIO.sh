@@ -16,7 +16,7 @@ fail() { echo -e "${RED}[X]${RESET} $1\r"; }
 line() { echo -e "${CYAN}------------------------------${RESET}\r"; }
 
 clear
-echo -e "${GREEN}===== UGPHONE AIO (SIMPLE FIX) =====${RESET}\r"
+echo -e "${GREEN}===== UGPHONE AIO (AUTO UPDATE) =====${RESET}\r"
 line
 
 # ================== 1. BỘ NHỚ ==================
@@ -28,18 +28,16 @@ termux-setup-storage >/dev/null 2>&1
 ok "Storage ready"
 line
 
-# ================== 2. REPO SETUP ==================
+# ================== 2. REPO & UPGRADE ==================
 step "2/7" "Repo & Upgrade"
 
 echo -e " -> Updating package lists...\r"
-# Dùng -y chuẩn thay vì 'yes|'
 pkg update -y >/dev/null 2>&1
 
 echo -e " -> Config Repo (FuzyTVSadBoy)...\r"
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/termux-change-repo.sh)" >/dev/null 2>&1
 
 echo -e " -> Upgrading system...\r"
-# Dùng -y chuẩn
 pkg upgrade -y -o Dpkg::Options::="--force-confnew" >/dev/null 2>&1
 ok "System Upgraded"
 line
@@ -48,20 +46,13 @@ line
 step "3/7" "Installing Python"
 
 echo -e " -> Installing Python & Pip...\r"
-# Dùng -y chuẩn, cài đủ gói cần thiết
 pkg install -y python python-pip clang make binutils >/dev/null 2>&1
 
 if python --version >/dev/null 2>&1; then
     ok "Python Installed"
 else
-    # Fallback nếu pkg lỗi thì dùng apt
     apt install -y python python-pip >/dev/null 2>&1
-    if python --version >/dev/null 2>&1; then
-         ok "Python Installed (Apt)"
-    else
-         fail "Python Install Failed!"
-         exit 1
-    fi
+    ok "Python Installed (Apt)"
 fi
 line
 
@@ -77,18 +68,16 @@ export CFLAGS="-Wno-error=implicit-function-declaration"
 if pip install psutil --no-cache-dir --quiet >/dev/null 2>&1; then
     echo -e "${GREEN}OK${RESET}\r"
 else
-    # Fallback
     pip install psutil --no-binary :all: --quiet >/dev/null 2>&1
     echo -e "${YELLOW}OK (Source)${RESET}\r"
 fi
 ok "Libraries Ready"
 line
 
-# ================== 5. DOWNLOAD TOOL (SIMPLE) ==================
+# ================== 5. DOWNLOAD TOOL ==================
 step "5/7" "Downloading Tool"
 mkdir -p "/sdcard/Download"
 
-# Tải bằng curl đơn giản như bạn yêu cầu
 curl -Ls "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/OldShouko.py" -o /sdcard/Download/OldShouko.py
 
 if [ -f "/sdcard/Download/OldShouko.py" ]; then
@@ -112,32 +101,72 @@ su -c "wm density 200; settings put global development_settings_enabled 1; setti
 ok "Window Optimized"
 line
 
-# ================== 7. APK INSTALLER (AUTO-RENAME) ==================
+# ================== 7. APK INSTALLER (SMART PYTHON) ==================
 step "7/7" "Installing APKs"
 
 APK_ROOT="/sdcard/Download/auto_apk_root"
-TMP_ROOT="/sdcard/Download/.apk_tmp"
-GDRIVE="https://drive.google.com/drive/folders/16dE9WRhm53lh7STAOGnwWPZya_c9WxOc"
+rm -rf "$APK_ROOT"
+mkdir -p "$APK_ROOT"
 
-rm -rf "$APK_ROOT" "$TMP_ROOT"
-mkdir -p "$APK_ROOT" "$TMP_ROOT"
+echo -e "${YELLOW} -> Downloading Folder from Drive...${RESET}\r"
 
-echo -e "${YELLOW} -> Downloading from Drive (Please wait)...${RESET}\r"
-cd "$TMP_ROOT" || exit
-python -m gdown --folder "$GDRIVE" --quiet >/dev/null 2>&1
+# ------------------------------------------------------------------
+# TẠO SCRIPT PYTHON ĐỂ TẢI VÀ ĐỔI TÊN FILE (THÔNG MINH HƠN BASH)
+# ------------------------------------------------------------------
+cat <<EOF > downloader.py
+import gdown
+import os
+import shutil
+import re
 
-# Auto-Rename để tránh lỗi ">"
-find . -type f -name "*.apk" | while read filename; do
-    safe_name=$(echo "$filename" | sed 's/[^a-zA-Z0-9.]/_/g')
-    mv "$filename" "$APK_ROOT/$safe_name"
-done
+url = "https://drive.google.com/drive/folders/16dE9WRhm53lh7STAOGnwWPZya_c9WxOc"
+output_dir = "/sdcard/Download/.apk_tmp_py"
+final_dir = "/sdcard/Download/auto_apk_root"
 
+if os.path.exists(output_dir):
+    shutil.rmtree(output_dir)
+os.makedirs(output_dir)
+
+try:
+    # Tải folder bằng thư viện python (ổn định hơn lệnh cli)
+    print("    Starting download...")
+    files = gdown.download_folder(url, output=output_dir, quiet=True, use_cookies=False)
+    
+    if not files:
+        print("    [!] No files returned. Trying with cookies...")
+        files = gdown.download_folder(url, output=output_dir, quiet=True, use_cookies=True)
+
+    print(f"    Downloaded {len(files)} files.")
+
+    for file_path in files:
+        if file_path.endswith(".apk"):
+            filename = os.path.basename(file_path)
+            # Logic đổi tên an toàn: Chỉ giữ lại chữ và số
+            safe_name = re.sub(r'[^a-zA-Z0-9.]', '_', filename)
+            
+            # Di chuyển sang thư mục gốc
+            shutil.move(file_path, os.path.join(final_dir, safe_name))
+            print(f"    Prepared: {safe_name}")
+
+    # Dọn dẹp
+    shutil.rmtree(output_dir)
+
+except Exception as e:
+    print(f"    [X] Error: {e}")
+EOF
+# ------------------------------------------------------------------
+
+# Chạy script python vừa tạo
+python downloader.py
+rm downloader.py
+
+# Cài đặt
 cd "$APK_ROOT" || exit
 shopt -s nullglob
 files=(*.apk)
 
 if [ ${#files[@]} -eq 0 ]; then
-    warn "No APKs Found"
+    warn "No APKs Found in Folder"
 else
     echo -e " -> Installing ${#files[@]} App(s):\r"
     for filename in "${files[@]}"; do
@@ -156,7 +185,6 @@ else
     done
 fi
 
-rm -rf "$TMP_ROOT"
 line
 echo -e "${GREEN}===== ALL DONE =====${RESET}\r"
 echo -e "${YELLOW}Reboot Device Now!${RESET}\r"
