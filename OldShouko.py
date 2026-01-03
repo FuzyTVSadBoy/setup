@@ -1697,7 +1697,8 @@ def main():
             "Enable Discord Webhook",
             "Auto Check User Setup",
             "Configure Package Prefix",
-            "Auto Change Android ID"
+            "Auto Change Android ID",
+            "Input Custom Script"
         ]
 
         UIManager.create_dynamic_menu(menu_options)
@@ -1887,6 +1888,70 @@ def main():
             else:
                 auto_android_id_enabled = False
                 print("\033[1;31m[ Shouko.dev ] - Auto change Android ID disabled.\033[0m")
+            input("\033[1;32mPress Enter to return...\033[0m")
+            continue
+        elif setup_type == "8":
+            try:
+                print("\033[1;36m[ Shouko.dev ] - Input Custom Script Mode\033[0m")
+                print("\033[1;33mPaste your Lua script below. Type 'END' on a new line to finish.\033[0m")
+                
+                lines = []
+                while True:
+                    line = input()
+                    if line.strip().upper() == "END":
+                        break
+                    lines.append(line)
+                
+                script_content = "\n".join(lines)
+                
+                if not script_content.strip():
+                    print("\033[1;31m[ Shouko.dev ] - Script is empty. Cancelled.\033[0m")
+                else:
+                    # 1. Lưu vào file nguồn
+                    os.makedirs("Shouko.dev", exist_ok=True)
+                    source_file = "Shouko.dev/custom_script.lua"
+                    with open(source_file, "w", encoding="utf-8") as f:
+                        f.write(script_content)
+                    
+                    print(f"\033[1;32m[ Shouko.dev ] - Saved to {source_file}\033[0m")
+                    
+                    # 2. Cài đặt vào Executor
+                    print("\033[1;36m[ Shouko.dev ] - Installing to Executors...\033[0m")
+                    detected = ExecutorManager.detect_executors()
+                    
+                    if not detected:
+                        print("\033[1;31m[ Shouko.dev ] - No executors found.\033[0m")
+                    else:
+                        installed_count = 0
+                        for exec_name in detected:
+                            base_path = executors[exec_name]
+                            # Tìm folder autoexec
+                            targets = [
+                                os.path.join(base_path, "Autoexec"),
+                                os.path.join(base_path, "autoexec"),
+                                os.path.join(base_path, "Autoexecute"),
+                                # KRNL path (nếu cần)
+                                os.path.join(base_path, "workspace", ".storage", "tabs") 
+                            ]
+                            
+                            for target in targets:
+                                if os.path.exists(target):
+                                    # Tên file đích: z_custom_script.txt
+                                    dest_file = os.path.join(target, "z_shouko_custom.txt")
+                                    try:
+                                        with open(dest_file, "w", encoding="utf-8") as f:
+                                            f.write(script_content)
+                                        print(f"\033[1;32m + Installed to {exec_name}\033[0m")
+                                        installed_count += 1
+                                        break
+                                    except Exception as e:
+                                        print(f"\033[1;31m - Error {exec_name}: {e}\033[0m")
+                        
+                        print(f"\033[1;32m[ Shouko.dev ] - Done! Installed to {installed_count} executors.\033[0m")
+
+            except Exception as e:
+                print(f"\033[1;31m[ Shouko.dev ] - Error: {e}\033[0m")
+            
             input("\033[1;32mPress Enter to return...\033[0m")
             continue
 
