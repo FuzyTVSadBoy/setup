@@ -1408,7 +1408,7 @@ class ExecutorManager:
 class Runner:
     BOOT_GRACE = 300       # 5 phút
     HEARTBEAT_TIMEOUT = 15 # 15s timeout
-    TELEPORT_MAX_WAIT = 60 # 60s chờ teleport
+    TELEPORT_MAX_WAIT = 80 # 60s chờ teleport
     
     launch_times = {}      # Lưu thời gian launch
     proc_cache = {}        # Cache process CPU
