@@ -1702,7 +1702,8 @@ def main():
             "Enable Discord Webhook",
             "Auto Check User Setup",
             "Configure Package Prefix",
-            "Auto Change Android ID"
+            "Auto Change Android ID",
+            "Input Custom Script"
         ]
 
         UIManager.create_dynamic_menu(menu_options)
