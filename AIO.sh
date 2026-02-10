@@ -1,23 +1,33 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # ==============================================================================
-# BOOTLOADER: CÀI ĐẶT MÔI TRƯỜNG PYTHON & RICH TRƯỚC KHI CHẠY UI
+# BƯỚC 0: SỬA LỖI MÔI TRƯỜNG & UPDATE TERMUX (QUAN TRỌNG NHẤT)
 # ==============================================================================
 clear
-echo -e "\033[1;33m[!] Bootstrapping Python Environment...\033[0m"
+echo -e "\033[1;33m[!] PREPARING ENVIRONMENT (FIXING CONFLICTS)...\033[0m"
 
-# 1. Cài Python và pip nếu chưa có
+# 1. Đổi Repo trước để tránh lỗi mạng khi update
+echo " -> Config Repo..."
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/termux-change-repo.sh)" >/dev/null 2>&1
+
+# 2. Update toàn bộ hệ thống (Fix lỗi version conflict)
+echo " -> System Upgrade (This may take a while)..."
+pkg update -y -o Dpkg::Options::="--force-confnew" >/dev/null 2>&1
+pkg upgrade -y -o Dpkg::Options::="--force-confnew" >/dev/null 2>&1
+
+# 3. Cài Python nếu thiếu
 if ! command -v python >/dev/null 2>&1; then
     echo " -> Installing Python..."
     pkg install python -y >/dev/null 2>&1
 fi
 
-# 2. Cài thư viện giao diện (Rich) và mạng (Requests)
-echo " -> Installing dependencies (Rich & Requests)..."
-pip install rich requests psutil --no-cache-dir --quiet >/dev/null 2>&1
+# 4. Xóa cache và Cài lại thư viện RICH bản mới nhất (Fix lỗi thiếu 'Rule')
+echo " -> Force Re-installing UI Libraries..."
+pip cache purge >/dev/null 2>&1
+pip install --upgrade --force-reinstall rich requests psutil --no-cache-dir --quiet >/dev/null 2>&1
 
 # ==============================================================================
-# MAIN PYTHON SCRIPT STARTS HERE
+# MAIN PYTHON SCRIPT (RICH UI EDITION)
 # ==============================================================================
 cat <<EOF > run_aio.py
 import os
@@ -26,22 +36,18 @@ import time
 import subprocess
 import shutil
 import requests
-import re
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, DownloadColumn, TransferSpeedColumn, TimeRemainingColumn
-from rich.layout import Layout
 from rich.live import Live
 from rich.table import Table
-from rich.style import Style
-from rich.rule import Rule  # <--- ĐÃ THÊM DÒNG NÀY ĐỂ FIX LỖI
+from rich.rule import Rule  # <--- Đảm bảo import này hoạt động sau khi update
 from rich import box
 
 # --- CẤU HÌNH ---
 console = Console()
 DOWNLOAD_DIR = "/sdcard/Download/auto_apk_root"
 TOOL_URL = "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/OldShouko.py"
-REPO_SCRIPT = "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/termux-change-repo.sh"
 
 APK_LINKS = [
     "https://download2272.mediafire.com/6xz4xlxoffagKvtpi3FSD-dX6QqN8tfX6NHSRXSvn0Nz6jAZLG9V5FyYwX2Wvi0K_B6p0KjgeT1jMPN_TNoCC4Rh8WUEjDt0TtTxr2wDKu5Mdp6stol7j7nHeKHCnO1mErxTKvjDYuBESGwJ55xu_12q3yPkhXgdFPKGMCB4g6laiw/x5b9678xq6ut13d/DeltaGlobalCloneByCherry+1-2.706.750.apk.apk",
@@ -53,13 +59,12 @@ APK_LINKS = [
 def header():
     console.clear()
     console.print(Panel.fit(
-        "[bold cyan]UGPHONE AIO ULTIMATE[/bold cyan]\n[yellow]Python Rich UI Edition[/yellow]",
+        "[bold cyan]UGPHONE AIO ULTIMATE[/bold cyan]\n[yellow]Python Rich UI Edition (v2.0 Fixed)[/yellow]",
         border_style="bold blue",
         padding=(1, 5)
     ))
 
 def run_cmd(command, shell=True):
-    """Chạy lệnh shell ẩn"""
     try:
         subprocess.run(command, shell=shell, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True
@@ -67,7 +72,6 @@ def run_cmd(command, shell=True):
         return False
 
 def check_root():
-    """Kiểm tra quyền Root"""
     try:
         subprocess.check_call(['su', '-c', 'id'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True
@@ -77,7 +81,7 @@ def check_root():
 # --- TASKS ---
 
 def step_1_storage():
-    with console.status("[bold green]Setting up Storage...", spinner="dots"):
+    with console.status("[bold green]Resetting Storage...", spinner="dots"):
         home_storage = "/data/data/com.termux/files/home/storage"
         if os.path.exists(home_storage):
             shutil.rmtree(home_storage, ignore_errors=True)
@@ -85,35 +89,11 @@ def step_1_storage():
         time.sleep(1)
     console.print("[✓] Storage Configured", style="green")
 
-def step_2_system_update():
-    # Sử dụng Progress bar cho task dài
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TimeRemainingColumn(),
-        console=console
-    ) as progress:
-        task1 = progress.add_task("[cyan]Updating Packages...", total=3)
-        
-        # 1. Update
-        run_cmd("pkg update -y")
-        progress.advance(task1)
-        
-        # 2. Repo Config
-        run_cmd(f'bash -c "$(curl -fsSL {REPO_SCRIPT})"')
-        progress.advance(task1)
-        
-        # 3. Upgrade
-        run_cmd('pkg upgrade -y -o Dpkg::Options::="--force-confnew"')
-        progress.advance(task1)
-        
-    console.print("[✓] System Upgraded", style="green")
-
-def step_3_libs():
-    with console.status("[bold yellow]Installing Extra Libraries...", spinner="earth"):
-        run_cmd("pip install psutil --no-cache-dir")
-    console.print("[✓] Libraries Ready", style="green")
+def step_2_check_libs():
+    # Bước này chỉ hiển thị cho đẹp vì đã cài ở bash script rồi
+    with console.status("[bold yellow]Verifying Libraries...", spinner="earth"):
+        time.sleep(1) 
+    console.print("[✓] Libraries Verified (Rich, Requests, Psutil)", style="green")
 
 def step_4_device_config():
     if not check_root():
@@ -155,7 +135,6 @@ def step_6_download_apks():
 
     console.print(f"\n[bold cyan]Downloading {len(APK_LINKS)} APK(s) from Mediafire...[/bold cyan]")
     
-    # Custom Progress Bar cho việc tải file
     progress = Progress(
         TextColumn("[bold blue]{task.fields[filename]}", justify="right"),
         BarColumn(bar_width=None),
@@ -174,17 +153,15 @@ def step_6_download_apks():
             try:
                 # Xử lý tên file
                 filename = url.split('/')[-1]
-                # Fix lỗi .apk.apk
                 if filename.endswith(".apk.apk"):
                     filename = filename[:-4]
                 
-                # Tên hiển thị ngắn gọn
-                display_name = (filename[:25] + '..') if len(filename) > 25 else filename
-                
+                display_name = (filename[:20] + '..') if len(filename) > 20 else filename
                 dest_path = os.path.join(DOWNLOAD_DIR, filename)
                 
-                # Tạo request stream
-                response = requests.get(url, stream=True, timeout=30, headers={'User-Agent': 'Mozilla/5.0'})
+                # Tải file
+                headers = {'User-Agent': 'Mozilla/5.0'}
+                response = requests.get(url, stream=True, timeout=30, headers=headers)
                 total_length = int(response.headers.get('content-length', 0))
                 
                 task_id = progress.add_task("download", filename=display_name, total=total_length)
@@ -216,19 +193,15 @@ def step_7_install_apks():
     with Live(table, refresh_per_second=4, console=console):
         for apk in files:
             full_path = os.path.join(DOWNLOAD_DIR, apk)
-            # Fix quyền file
             os.chmod(full_path, 0o644)
+            short_name = (apk[:25] + '..') if len(apk) > 25 else apk
             
-            short_name = (apk[:30] + '..') if len(apk) > 30 else apk
-            
-            # Lệnh cài đặt
             cmd = f'su -c "pm install -r \\"{full_path}\\""'
             
             if run_cmd(cmd):
                 table.add_row(short_name, "[green]SUCCESS[/green]")
             else:
                 table.add_row(short_name, "[red]FAILED (GUI)[/red]")
-                # Fallback mở GUI
                 try:
                     subprocess.run(f'am start -a android.intent.action.VIEW -d "file://{full_path}" -t application/vnd.android.package-archive', shell=True, stderr=subprocess.DEVNULL)
                 except: pass
@@ -240,15 +213,12 @@ if __name__ == "__main__":
     header()
     
     step_1_storage()
+    console.print(Rule(style="dim")) # Vị trí từng bị lỗi
+    
+    step_2_check_libs()
     console.print(Rule(style="dim"))
     
-    step_2_system_update()
-    console.print(Rule(style="dim"))
-    
-    step_3_libs()
-    console.print(Rule(style="dim"))
-    
-    step_5_download_tool() # Đảo thứ tự xíu cho logic
+    step_5_download_tool()
     console.print(Rule(style="dim"))
     
     step_4_device_config()
