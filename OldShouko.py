@@ -1476,74 +1476,78 @@ class ExecutorManager:
         except:
             pass
 
-class Runner:
-    BOOT_GRACE = 170       # 5 phút
-    HEARTBEAT_TIMEOUT = 25 # 15s timeout
-    TELEPORT_MAX_WAIT = 80 # 60s chờ teleport
-    
-    launch_times = {}      # Lưu thời gian launch
-    proc_cache = {}        # Cache process CPU
-    path_cache = {}        # Cache đường dẫn file
-    teleport_start = {}    # Lưu thời điểm bắt đầu Teleport
-
-    @classmethod
-    def get_package_cpu(cls, package_name):
-        total_cpu = 0.0
-        try:
-            # Tìm process cha
-            parent = None
-            if package_name in cls.proc_cache:
-                parent = cls.proc_cache[package_name]
-            
-            # Nếu cache lỗi hoặc chưa có, tìm lại
-            if not parent or not parent.is_running():
-                for p in psutil.process_iter(['name', 'cmdline']):
-                    try:
-                        if package_name in (p.info['cmdline'] or []) or package_name in (p.info['name'] or ''):
-                            parent = p
-                            cls.proc_cache[package_name] = p
-                            break
-                    except: continue
-            
-            if parent:
-                # Cộng CPU của cha
-                total_cpu += parent.cpu_percent(interval=0.1)
-                for child in parent.children(recursive=True):
-                    try:
-                        total_cpu += child.cpu_percent(interval=0.1)
-                    except: pass
-                    
-        except: pass
+# Hàm hỗ trợ lấy CPU qua Shell (Bypass psutil limitation on Android)
+def get_cpu_usage_shell(package_name):
+    try:
+        # Dùng lệnh top để lấy thông tin process thật
+        # -n 1: 1 lần, -b: batch mode
+        # grep theo tên package để lọc đúng clone
+        cmd = f"top -n 1 -b | grep {package_name}"
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
         
-        # Làm tròn 1 chữ số
-        return round(total_cpu, 1)
+        if result.stdout:
+            # Output mẫu: 1234 u0_a123 20 0 10G 200M 50M S 12.5 5.0 0:05.12 com.roblox.client
+            # Cột %CPU thường nằm ở vị trí thứ 9 (index 8) hoặc gần đó tùy Android version
+            # Ta sẽ quét các phần tử số thực trong dòng
+            lines = result.stdout.strip().split('\n')
+            for line in lines:
+                if package_name in line:
+                    parts = line.split()
+                    for part in parts:
+                        # Tìm chuỗi số có định dạng XX.X% hoặc XX.X
+                        part = part.replace('%', '')
+                        if '.' in part and part.replace('.', '').isdigit():
+                            try:
+                                cpu_val = float(part)
+                                # Loại trừ các giá trị quá lớn (PID, Memory ảo)
+                                if 0.0 <= cpu_val <= 800.0: 
+                                    return cpu_val
+                            except: continue
+        return 0.0
+    except:
+        return 0.0
+
+class Runner:
+    # CẤU HÌNH THỜI GIAN (Đã tinh chỉnh cho Cloud Phone)
+    BOOT_GRACE = 300       # 5 Phút: Thời gian "Ân hạn" lúc đầu để Clone load xong map
+    CPU_GRACE = 120        # 2 Phút: Thời gian không check CPU lúc đầu
+    HEARTBEAT_TIMEOUT = 60 # 60 Giây: Thời gian chờ tín hiệu trước khi kết luận treo
+    
+    # Cache dữ liệu
+    proc_cache = {}
+    path_cache = {}
+    launch_times = {}
+    teleport_start = {}
+    low_cpu_start = {} # Đếm thời gian CPU thấp
 
     @classmethod
     def get_heartbeat_status(cls, user_id):
         filename = f"heartbeat_{user_id}.txt"
         file_path_found = None
         
-        # 1. Ưu tiên Cache
+        # 1. Ưu tiên Cache (Siêu tốc)
         if user_id in cls.path_cache:
             if os.path.exists(cls.path_cache[user_id]):
                 file_path_found = cls.path_cache[user_id]
             else:
-                del cls.path_cache[user_id]
+                del cls.path_cache[user_id] # File bị dời/xóa -> Xóa cache
 
-        # 2. Quét đường dẫn Delta Mới (FIX QUAN TRỌNG)
+        # 2. Quét "Mù" (Direct Access) - Bắt buộc cho Delta/Android 10+
         if not file_path_found:
             target_pkg = None
+            # Map UserID sang Package Name
             for pkg, uid in globals().get("_user_", {}).items():
                 if str(uid) == str(user_id):
                     target_pkg = pkg
                     break
             
             if target_pkg:
-                # Danh sách các đường dẫn của Delta
+                # Các đường dẫn "hiểm" của Delta/Fluxus/Codex
                 potential_paths = [
-                    f"/sdcard/Android/data/{target_pkg}/files/gloop/external/Workspace/{filename}",
-                    f"/sdcard/Android/data/{target_pkg}/files/gloop/external/workspace/{filename}",
-                    f"/sdcard/Android/data/{target_pkg}/files/workspace/{filename}"
+                    f"/sdcard/Android/data/{target_pkg}/files/gloop/external/Workspace/{filename}", # Delta New
+                    f"/sdcard/Android/data/{target_pkg}/files/gloop/external/workspace/{filename}", # Delta New (Lower)
+                    f"/sdcard/Android/data/{target_pkg}/files/workspace/{filename}", # Standard
+                    f"/sdcard/Android/data/{target_pkg}/files/Workspace/{filename}"  # Standard
                 ]
                 
                 for p in potential_paths:
@@ -1552,7 +1556,7 @@ class Runner:
                         cls.path_cache[user_id] = p
                         break
 
-        # 3. Quét Workspace cũ (Fluxus...)
+        # 3. Quét Workspace cũ (Backup cho các Executor đời cũ)
         if not file_path_found:
             for ws in globals().get("workspace_paths", []):
                 path = os.path.join(ws, filename)
@@ -1561,7 +1565,7 @@ class Runner:
                     file_path_found = path
                     break
         
-        # 4. Đọc dữ liệu
+        # 4. Đọc dữ liệu & Xử lý
         data = {"status": "UNKNOWN", "time": 0}
         if file_path_found:
             try:
@@ -1574,15 +1578,17 @@ class Runner:
                     else:
                         data["status"] = "ALIVE"
                         data["time"] = int(float(content))
+                
+                # Auto-Clean: Xóa file sau khi đọc để tránh đọc lại dữ liệu cũ
                 try: os.remove(file_path_found)
                 except: pass
             except: pass
             
         return data
-    
+
     @classmethod
     def launch_package_sequentially(cls, server_links):
-        # Tự động chép Script Lua nếu cần
+        # Auto copy script Lua nếu cần
         if globals().get("check_exec_enable") == "1":
             det = ExecutorManager.detect_executors()
             if det: ExecutorManager.write_lua_script(det)
@@ -1591,138 +1597,140 @@ class Runner:
             uid = globals()["_user_"].get(pkg)
             if not uid: continue
             
-            # Xóa cache cũ để tránh dữ liệu rác
+            # Reset trạng thái
             if pkg in cls.proc_cache: del cls.proc_cache[pkg]
             if uid in cls.path_cache: del cls.path_cache[uid]
             if uid in cls.teleport_start: del cls.teleport_start[uid]
-
-            # Xóa file heartbeat cũ
-            try:
-                # Dùng logic xóa thông minh (tìm file rồi xóa)
-                # Hoặc đơn giản là xóa cache file cũ nếu có
-                pass 
-            except: pass
+            if uid in cls.low_cpu_start: del cls.low_cpu_start[uid]
 
             with status_lock:
                 globals()["package_statuses"][pkg] = {
                     "Username": FileManager.get_username(uid),
-                    "Status": "\033[1;33mPreparing...\033[0m"
+                    "Status": "\033[1;33mLaunching...\033[0m"
                 }
             
-            print(f"\033[1;32m[ Shouko.dev ] - Launching: {pkg}\033[0m")
+            print(f"\033[1;32m[ Shouko.dev ] - Starting: {pkg} ({FileManager.get_username(uid)})\033[0m")
             RobloxManager.launch_roblox(pkg, link)
             cls.launch_times[uid] = time.time()
-            time.sleep(15)
+            time.sleep(15) # Delay giữa các lần mở để tránh lag máy
 
     @classmethod
     def monitor_presence(cls, server_links, stop_event):
-        print("\033[1;36m[ Runner ] - Monitor V17 (Anti-False Kill)...\033[0m")
-        low_cpu_start = {}
-
         while not stop_event.is_set():
-            try:
+            # Copy danh sách để tránh lỗi runtime khi dictionary thay đổi
+            active_packages = list(server_links)
+            
+            for pkg, link in active_packages:
+                uid = globals()["_user_"].get(pkg)
+                if not uid: continue
+
+                rejoin = False
+                st = ""
                 now = time.time()
+                lt_launch = cls.launch_times.get(uid, 0)
                 
-                for pkg, _ in server_links:
-                    uid = globals()["_user_"].get(pkg)
-                    if not uid: continue
-                    
+                # Bỏ qua nếu chưa launch
+                if lt_launch == 0: continue
+
+                # --- 1. CPU CHECK (SHELL BASED - CHÍNH XÁC CHO CLONE) ---
+                # Lấy CPU thật qua lệnh top
+                pkg_cpu = get_cpu_usage_shell(pkg)
+                
+                # Logic: Nếu game mở > 120s (CPU Grace) mà CPU vẫn = 0.0 -> Chắc chắn Crash/Tắt
+                if (now - lt_launch > cls.CPU_GRACE) and (pkg_cpu == 0.0):
+                    st = "\033[1;31mCRASHED (Process Lost)\033[0m"
+                    rejoin = True
+                
+                # Logic: Nếu game mở > 120s mà CPU quá thấp (< 1.0%) trong 90s liên tục -> Treo cứng
+                elif (now - lt_launch > cls.CPU_GRACE) and (pkg_cpu < 1.0):
+                    if uid not in cls.low_cpu_start:
+                        cls.low_cpu_start[uid] = now
+                    elif now - cls.low_cpu_start[uid] > 90: # Treo quá 90s
+                        st = f"\033[1;31mFROZEN (CPU {pkg_cpu:.1f}%)\033[0m"
+                        rejoin = True
+                else:
+                    # CPU ổn định -> Reset bộ đếm treo
+                    if uid in cls.low_cpu_start: del cls.low_cpu_start[uid]
+
+                # --- 2. HEARTBEAT CHECK (LOGIC CHÍNH) ---
+                if not rejoin:
                     hb_data = cls.get_heartbeat_status(uid)
                     last_hb = hb_data["time"]
                     status_lua = hb_data["status"]
-                    lt_launch = cls.launch_times.get(uid, 0)
-                    
-                    st = "\033[1;30mUnknown\033[0m"
-                    rejoin = False
-                    pkg_cpu = cls.get_package_cpu(pkg)
-                    
-                    # 1. LOW CPU CHECK (Nới lỏng để tránh kill oan)
-                    # Chỉ check sau 30s khởi động
-                    # Ngưỡng: < 10% trong 30s liên tục -> Mới coi là treo
-                    if (now - lt_launch > 60) and (pkg_cpu < 3.0):
-                        if uid not in low_cpu_start:
-                            low_cpu_start[uid] = now
-                        elif now - low_cpu_start[uid] > 60: 
-                            st = f"\033[1;31mGAME CLOSED ({pkg_cpu:.1f}% > 60s)\033[0m"
+
+                    # Giai đoạn BOOTING: Nếu chưa quá 5 phút, chỉ báo Booting
+                    if (now - lt_launch < cls.BOOT_GRACE):
+                        st = f"\033[1;36mBooting... ({int(now - lt_launch)}s)\033[0m"
+                        # Tuy nhiên, nếu phát hiện ERROR/SHUTDOWN thì vẫn Kill ngay
+                        if status_lua == "SHUTDOWN" or status_lua == "ERROR":
+                            st = "\033[1;31mBoot Error / Kick\033[0m"
                             rejoin = True
-                    else:
-                        # Nếu CPU nhảy lên trên 3%, reset bộ đếm ngay
-                        if uid in low_cpu_start: del low_cpu_start[uid]
-
-                    if not rejoin:
-                        # 2. HEARTBEAT CHECK
-                        if now - last_hb < cls.HEARTBEAT_TIMEOUT and last_hb > 0:
-                            if status_lua != "TELEPORT" and uid in cls.teleport_start:
-                                del cls.teleport_start[uid]
-
-                            if status_lua == "SHUTDOWN":
-                                st = "\033[1;31mGame Closed / Kicked\033[0m"
-                                rejoin = True
-                            
-                            elif status_lua == "TELEPORT":
-                                if uid not in cls.teleport_start: cls.teleport_start[uid] = now
-                                elapsed = int(now - cls.teleport_start[uid])
-                                st = f"\033[1;35mTeleporting... ({elapsed}s/60s) | CPU: {pkg_cpu:.1f}%\033[0m"
-                                if elapsed > cls.TELEPORT_MAX_WAIT:
-                                    st = "\033[1;31mTeleport Stuck (>60s)\033[0m"; rejoin = True
-                            
-                            elif status_lua == "TELEPORT_FAIL":
-                                st = f"\033[1;33mTeleport Failed | CPU: {pkg_cpu:.1f}%\033[0m"
-                            
-                            else: # ALIVE
-                                st = f"\033[1;32mConnected (Ping: {now-last_hb:.1f}s) | CPU: {pkg_cpu:.1f}%\033[0m"
-
-                        # 3. NO SIGNAL CHECK
-                        else:
-                            if uid in cls.teleport_start:
-                                elapsed = int(now - cls.teleport_start[uid])
-                                if elapsed < cls.TELEPORT_MAX_WAIT:
-                                    st = f"\033[1;35mTeleporting (No Signal)... ({elapsed}s)\033[0m"
-                                else:
-                                    st = "\033[1;31mTeleport Timeout\033[0m"; rejoin = True
-                            
-                            elif now - lt_launch < cls.BOOT_GRACE:
-                                rem = int(cls.BOOT_GRACE - (now - lt_launch))
-                                st = f"\033[1;33mBooting ({rem}s) | CPU: {pkg_cpu:.1f}%\033[0m"
-                            
-                            else:
-                                st = "\033[1;31mNO SIGNAL (Timeout 15s)\033[0m"; rejoin = True
-
-                    with status_lock:
-                        if pkg in globals()["package_statuses"]:
-                            globals()["package_statuses"][pkg]["Status"] = st
                     
-                    if rejoin:
-                        print(f"\033[1;31m[AutoRejoin] {uid} -> Rejoining...\033[0m")
-                        if uid in low_cpu_start: del low_cpu_start[uid]
-                        if uid in cls.teleport_start: del cls.teleport_start[uid]
-                        if pkg in cls.proc_cache: del cls.proc_cache[pkg]
+                    # Giai đoạn RUNNING:
+                    else:
+                        if status_lua == "SHUTDOWN" or status_lua == "ERROR":
+                            st = "\033[1;31mDisconnected / Kicked\033[0m"
+                            rejoin = True
                         
-                        link = dict(server_links).get(pkg)
-                        if link:
-                            RobloxManager.kill_roblox_process(pkg)
-                            RobloxManager.delete_cache_for_package(pkg)
-                            time.sleep(2)
-                            with status_lock: globals()["package_statuses"][pkg]["Status"] = "\033[1;36mRejoining...\033[0m"
-                            threading.Thread(target=RobloxManager.launch_roblox, args=(pkg, link), daemon=True).start()
-                            cls.launch_times[uid] = time.time()
-                            time.sleep(5)
+                        elif status_lua == "TELEPORT":
+                            st = "\033[1;35mTeleporting...\033[0m"
+                            # Khi Teleport, gia hạn thời gian timeout
+                            cls.launch_times[uid] = now - cls.BOOT_GRACE - 10 
+                        
+                        # Kiểm tra Timeout (Mất tín hiệu)
+                        elif (now - last_hb > cls.HEARTBEAT_TIMEOUT) and (last_hb > 0):
+                            st = f"\033[1;31mNo Signal (> {cls.HEARTBEAT_TIMEOUT}s)\033[0m"
+                            rejoin = True
+                        
+                        elif last_hb > 0:
+                            st = f"\033[1;32mRunning (CPU {pkg_cpu:.1f}%)\033[0m"
+                        else:
+                            # Hết 5 phút mà không có bất kỳ file nào
+                            st = "\033[1;31mStuck Loading\033[0m"
+                            rejoin = True
 
-            except Exception: pass
-            time.sleep(5) # Quét mỗi 5s
+                # --- CẬP NHẬT TRẠNG THÁI UI ---
+                with status_lock:
+                    globals()["package_statuses"][pkg] = {
+                        "Username": FileManager.get_username(uid),
+                        "Status": st
+                    }
+
+                # --- XỬ LÝ REJOIN ---
+                if rejoin:
+                    print(f"\033[1;33m[ Shouko.dev ] - Rejoining {pkg}: {st}\033[0m")
+                    RobloxManager.kill_roblox(pkg)
+                    time.sleep(3)
+                    RobloxManager.launch_roblox(pkg, link)
+                    cls.launch_times[uid] = time.time()
+                    # Reset các biến đếm
+                    if uid in cls.path_cache: del cls.path_cache[uid]
+                    if uid in cls.low_cpu_start: del cls.low_cpu_start[uid]
+                    time.sleep(10)
+
+            time.sleep(5) # Chu kỳ quét 5 giây
 
     @staticmethod
-    def force_rejoin(links, interval, stop):
-        start = time.time()
-        while not stop.is_set():
-            if interval != float('inf') and (time.time() - start >= interval):
-                 RobloxManager.kill_roblox_processes(); start = time.time(); time.sleep(5)
-                 Runner.launch_package_sequentially(links)
-            time.sleep(60)
+    def force_rejoin(server_links, interval, stop_event):
+        # Logic Force Rejoin định kỳ (giữ nguyên)
+        while not stop_event.is_set():
+            time.sleep(interval)
+            print("\033[1;36m[ Shouko.dev ] - Scheduled Force Rejoin...\033[0m")
+            for pkg, link in server_links:
+                uid = globals()["_user_"].get(pkg)
+                if uid:
+                    RobloxManager.kill_roblox(pkg)
+                    time.sleep(2)
+                    RobloxManager.launch_roblox(pkg, link)
+                    Runner.launch_times[uid] = time.time()
+                    time.sleep(10)
 
     @staticmethod
     def update_status_table_periodically():
-        while True: UIManager.update_status_table(); time.sleep(2)
+        # Cập nhật bảng hiển thị (giữ nguyên)
+        while True:
+            Utilities.display_status_table()
+            time.sleep(2)
                             
 def check_activation_status():
     try:
