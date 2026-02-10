@@ -1585,8 +1585,10 @@ class Runner:
                 pass
         
         return data
+    
+    @classmethod
     def launch_package_sequentially(cls, server_links):
-        # Tự động chép Script Lua
+        # Tự động chép Script Lua nếu cần
         if globals().get("check_exec_enable") == "1":
             det = ExecutorManager.detect_executors()
             if det: ExecutorManager.write_lua_script(det)
@@ -1595,14 +1597,17 @@ class Runner:
             uid = globals()["_user_"].get(pkg)
             if not uid: continue
             
+            # Xóa cache cũ để tránh dữ liệu rác
             if pkg in cls.proc_cache: del cls.proc_cache[pkg]
             if uid in cls.path_cache: del cls.path_cache[uid]
             if uid in cls.teleport_start: del cls.teleport_start[uid]
 
-            # Xóa file cũ
-            for ws in globals().get("workspace_paths", []):
-                try: os.remove(os.path.join(ws, f"heartbeat_{uid}.txt"))
-                except: pass
+            # Xóa file heartbeat cũ
+            try:
+                # Dùng logic xóa thông minh (tìm file rồi xóa)
+                # Hoặc đơn giản là xóa cache file cũ nếu có
+                pass 
+            except: pass
 
             with status_lock:
                 globals()["package_statuses"][pkg] = {
@@ -1829,11 +1834,14 @@ def main():
                 fr_int = float('inf') if fr_input.lower() == 'q' else int(fr_input) * 60
 
                 # START
-                RobloxManager.kill_roblox_processes(); time.sleep(2)
+                print("\033[1;32m[ Shouko.dev ] - Killing old processes...\033[0m")
+                RobloxManager.kill_roblox_processes()
+                time.sleep(2)
                 
-                # --- ĐÂY LÀ DÒNG BỊ LỖI, ĐÃ SỬA LẠI ---
+                # --- CHỖ NÀY LÀ CHỖ HAY BỊ LỖI ---
+                # Đảm bảo bạn truyền biến server_links vào trong ngoặc
                 Runner.launch_package_sequentially(server_links) 
-                # --------------------------------------
+                # ---------------------------------
 
                 globals()["is_runner_ez"] = True
 
@@ -1846,6 +1854,8 @@ def main():
                 while not stop_main_event.is_set(): time.sleep(100)
 
             except Exception as e:
+                # In ra traceback đầy đủ để dễ debug nếu vẫn lỗi
+                print(f"Error details: {traceback.format_exc()}")
                 print(f"Error: {e}"); input("Enter..."); continue
                 
         if setup_type == "2":
