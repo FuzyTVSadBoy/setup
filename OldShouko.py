@@ -1828,9 +1828,11 @@ def main():
                 fr_input = input("\033[1;93mForce rejoin (min/q): \033[0m")
                 fr_int = float('inf') if fr_input.lower() == 'q' else int(fr_input) * 60
 
-                # START
                 RobloxManager.kill_roblox_processes(); time.sleep(2)
-                Runner.launch_package_sequentially(server_links)
+                
+                Runner.launch_package_sequentially(server_links) 
+                # --------------------------------------
+
                 globals()["is_runner_ez"] = True
 
                 t1 = threading.Thread(target=Runner.monitor_presence, args=(server_links, stop_main_event), daemon=True)
