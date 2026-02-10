@@ -1523,53 +1523,50 @@ class Runner:
         filename = f"heartbeat_{user_id}.txt"
         file_path_found = None
         
-        # --- 1. KIỂM TRA CACHE (Nếu đã tìm thấy trước đó thì dùng lại ngay) ---
+        # 1. Ưu tiên Cache
         if user_id in cls.path_cache:
             if os.path.exists(cls.path_cache[user_id]):
                 file_path_found = cls.path_cache[user_id]
             else:
-                del cls.path_cache[user_id] # File không còn ở chỗ cũ, xóa cache
+                del cls.path_cache[user_id]
 
-        # --- 2. TÍNH TOÁN ĐƯỜNG DẪN DELTA TRỰC TIẾP (Bỏ qua việc quét folder) ---
-        # Logic: Tìm Package Name của UserID -> Ghép thành đường dẫn file
+        # 2. Quét đường dẫn Delta Mới (FIX QUAN TRỌNG)
         if not file_path_found:
-            target_package = None
-            # Lấy danh sách user từ biến global
-            user_map = globals().get("_user_", {})
-            
-            # Tìm xem UserID này thuộc về Package nào
-            for pkg, uid in user_map.items():
+            target_pkg = None
+            for pkg, uid in globals().get("_user_", {}).items():
                 if str(uid) == str(user_id):
-                    target_package = pkg
+                    target_pkg = pkg
                     break
             
-            if target_package:
-                direct_paths = [
-                    f"/sdcard/Android/data/{target_package}/files/gloop/external/Workspace/{filename}",
-                    f"/sdcard/Android/data/{target_package}/files/gloop/external/workspace/{filename}"
+            if target_pkg:
+                # Danh sách các đường dẫn của Delta
+                potential_paths = [
+                    f"/sdcard/Android/data/{target_pkg}/files/gloop/external/Workspace/{filename}",
+                    f"/sdcard/Android/data/{target_pkg}/files/gloop/external/workspace/{filename}",
+                    f"/sdcard/Android/data/{target_pkg}/files/workspace/{filename}"
                 ]
-
-                for p in direct_paths:
+                
+                for p in potential_paths:
                     if os.path.exists(p):
                         file_path_found = p
                         cls.path_cache[user_id] = p
                         break
-                        
+
+        # 3. Quét Workspace cũ (Fluxus...)
         if not file_path_found:
             for ws in globals().get("workspace_paths", []):
-                p = os.path.join(ws, filename)
-                if os.path.exists(p):
-                    file_path_found = p
-                    cls.path_cache[user_id] = p
+                path = os.path.join(ws, filename)
+                if os.path.exists(path):
+                    cls.path_cache[user_id] = path
+                    file_path_found = path
                     break
-
-        data = {"status": "UNKNOWN", "time": 0}
         
+        # 4. Đọc dữ liệu
+        data = {"status": "UNKNOWN", "time": 0}
         if file_path_found:
             try:
                 with open(file_path_found, 'r', encoding='utf-8', errors='ignore') as f:
                     content = f.read().strip()
-                    
                     if "|" in content:
                         parts = content.split("|")
                         data["status"] = parts[0]
@@ -1577,13 +1574,10 @@ class Runner:
                     else:
                         data["status"] = "ALIVE"
                         data["time"] = int(float(content))
-                
                 try: os.remove(file_path_found)
                 except: pass
-                
-            except Exception as e:
-                pass
-        
+            except: pass
+            
         return data
     
     @classmethod
@@ -1645,13 +1639,14 @@ class Runner:
                     # 1. LOW CPU CHECK (Nới lỏng để tránh kill oan)
                     # Chỉ check sau 30s khởi động
                     # Ngưỡng: < 10% trong 30s liên tục -> Mới coi là treo
-                    if (now - lt_launch > 30) and (pkg_cpu < 10.0):
+                    if (now - lt_launch > 60) and (pkg_cpu < 3.0):
                         if uid not in low_cpu_start:
                             low_cpu_start[uid] = now
-                        elif now - low_cpu_start[uid] > 30: 
-                            st = f"\033[1;31mFROZEN/CRASH ({pkg_cpu:.1f}% > 30s)\033[0m"
+                        elif now - low_cpu_start[uid] > 60: 
+                            st = f"\033[1;31mGAME CLOSED ({pkg_cpu:.1f}% > 60s)\033[0m"
                             rejoin = True
                     else:
+                        # Nếu CPU nhảy lên trên 3%, reset bộ đếm ngay
                         if uid in low_cpu_start: del low_cpu_start[uid]
 
                     if not rejoin:
