@@ -279,8 +279,8 @@ def find_all_workspaces():
             for line in result.stdout.strip().splitlines():
                 pkg = line.strip()
                 if pkg:
-                    # Đường dẫn gốc của Delta mới: .../files/gloob/external/
-                    delta_external = f"/sdcard/Android/data/{pkg}/files/gloob/external/"
+                    # Đường dẫn gốc của Delta mới: .../files/gloop/external/
+                    delta_external = f"/sdcard/Android/data/{pkg}/files/gloop/external/"
                     
                     # Thêm workspace trong external
                     possible_paths.add(os.path.join(delta_external, "workspace"))
@@ -1258,7 +1258,7 @@ class ExecutorManager:
         try:
             packages = RobloxManager.get_roblox_packages()
             for pkg in packages:
-                base_path = f"/sdcard/Android/data/{pkg}/files/gloob/external/"
+                base_path = f"/sdcard/Android/data/{pkg}/files/gloop/external/"
                 if os.path.exists(base_path):
                     new_paths.append(base_path)
         except Exception as e:
@@ -1357,7 +1357,7 @@ class ExecutorManager:
             console.print(f"[bold yellow][ Shouko.dev ] - Scanning and Installing to Delta (New Paths)...[/bold yellow]")
             
             for base_path in new_delta_paths:
-                # base_path lúc này là: .../Android/data/{pkg}/files/gloob/external/
+                # base_path lúc này là: .../Android/data/{pkg}/files/gloop/external/
                 
                 # Các tên thư mục con mà Delta có thể dùng để chứa script
                 target_subs = ["Autoexec", "autoexec", "Autoexecute"]
@@ -1477,7 +1477,7 @@ class ExecutorManager:
             pass
 
 class Runner:
-    BOOT_GRACE = 300       # 5 phút
+    BOOT_GRACE = 200       # 5 phút
     HEARTBEAT_TIMEOUT = 15 # 15s timeout
     TELEPORT_MAX_WAIT = 60 # 60s chờ teleport
     
@@ -1508,8 +1508,6 @@ class Runner:
             if parent:
                 # Cộng CPU của cha
                 total_cpu += parent.cpu_percent(interval=0.1)
-                
-                # Cộng CPU của tất cả con cái (Children)
                 for child in parent.children(recursive=True):
                     try:
                         total_cpu += child.cpu_percent(interval=0.1)
@@ -1524,22 +1522,54 @@ class Runner:
     def get_heartbeat_status(cls, user_id):
         filename = f"heartbeat_{user_id}.txt"
         file_path_found = None
-
-        if user_id in cls.path_cache and os.path.exists(cls.path_cache[user_id]):
-            file_path_found = cls.path_cache[user_id]
-        else:
-            for ws in globals().get("workspace_paths", []):
-                path = os.path.join(ws, filename)
-                if os.path.exists(path):
-                    cls.path_cache[user_id] = path
-                    file_path_found = path
-                    break
         
+        # --- 1. KIỂM TRA CACHE (Nếu đã tìm thấy trước đó thì dùng lại ngay) ---
+        if user_id in cls.path_cache:
+            if os.path.exists(cls.path_cache[user_id]):
+                file_path_found = cls.path_cache[user_id]
+            else:
+                del cls.path_cache[user_id] # File không còn ở chỗ cũ, xóa cache
+
+        # --- 2. TÍNH TOÁN ĐƯỜNG DẪN DELTA TRỰC TIẾP (Bỏ qua việc quét folder) ---
+        # Logic: Tìm Package Name của UserID -> Ghép thành đường dẫn file
+        if not file_path_found:
+            target_package = None
+            # Lấy danh sách user từ biến global
+            user_map = globals().get("_user_", {})
+            
+            # Tìm xem UserID này thuộc về Package nào
+            for pkg, uid in user_map.items():
+                if str(uid) == str(user_id):
+                    target_package = pkg
+                    break
+            
+            if target_package:
+                direct_paths = [
+                    f"/sdcard/Android/data/{target_package}/files/gloop/external/Workspace/{filename}",
+                    f"/sdcard/Android/data/{target_package}/files/gloop/external/workspace/{filename}"
+                ]
+
+                for p in direct_paths:
+                    if os.path.exists(p):
+                        file_path_found = p
+                        cls.path_cache[user_id] = p
+                        break
+                        
+        if not file_path_found:
+            for ws in globals().get("workspace_paths", []):
+                p = os.path.join(ws, filename)
+                if os.path.exists(p):
+                    file_path_found = p
+                    cls.path_cache[user_id] = p
+                    break
+
         data = {"status": "UNKNOWN", "time": 0}
+        
         if file_path_found:
             try:
                 with open(file_path_found, 'r', encoding='utf-8', errors='ignore') as f:
                     content = f.read().strip()
+                    
                     if "|" in content:
                         parts = content.split("|")
                         data["status"] = parts[0]
@@ -1547,12 +1577,14 @@ class Runner:
                     else:
                         data["status"] = "ALIVE"
                         data["time"] = int(float(content))
+                
                 try: os.remove(file_path_found)
                 except: pass
-            except: pass
+                
+            except Exception as e:
+                pass
+        
         return data
-
-    @classmethod
     def launch_package_sequentially(cls, server_links):
         # Tự động chép Script Lua
         if globals().get("check_exec_enable") == "1":
@@ -1969,61 +2001,67 @@ def main():
 
         elif setup_type == "8":
             try:
-                print("\033[1;36m[ Shouko.dev ] - Input Custom Script Mode\033[0m")
-                print("\033[1;33mPaste your script below (Must be ONE LINE or Minified) and press Enter:\033[0m")
+                print("\033[1;36m[ Shouko.dev ] - Input Custom Script Mode (Multi-line)\033[0m")
+                print("\033[1;33mHãy paste script của bạn vào dưới đây. Gõ \033[1;31m'end'\033[1;33m ở một dòng riêng biệt để kết thúc:\033[0m")
                 
-                script_content = input().strip()
+                # Logic nhập nhiều dòng
+                lines = []
+                while True:
+                    line = sys.stdin.readline()
+                    if not line: break
+                    if line.strip().lower() == 'end':
+                        break
+                    lines.append(line)
+                
+                script_content = "".join(lines).strip()
                 
                 if not script_content:
-                    print("\033[1;31m[ Shouko.dev ] - Empty script. Cancelled.\033[0m")
+                    print("\033[1;31m[ Shouko.dev ] - Script trống. Đã hủy bỏ.\033[0m")
                 else:
-                    # Lưu file nguồn
+                    # 1. Lưu file nguồn để dự phòng
                     os.makedirs("Shouko.dev", exist_ok=True)
                     with open("Shouko.dev/custom_script.txt", "w", encoding="utf-8") as f:
                         f.write(script_content)
                     
-                    # 1. Cài đặt vào Executor CŨ (Giữ nguyên)
+                    # 2. Cài đặt vào các Executor truyền thống (Đường dẫn cũ)
                     detected = ExecutorManager.detect_executors()
                     if detected:
                         for exec_name in detected:
                             if exec_name == "Delta (New Path)": continue
                             if exec_name in executors:
                                 base = executors[exec_name]
-                                targets = [
-                                    os.path.join(base, "Autoexec"),
-                                    os.path.join(base, "autoexec"),
-                                    os.path.join(base, "Autoexecute")
-                                ]
+                                targets = ["Autoexec", "autoexec", "Autoexecute"]
                                 for t in targets:
-                                    if os.path.exists(t):
+                                    target_dir = os.path.join(base, t)
+                                    if os.path.exists(target_dir):
                                         try:
-                                            with open(os.path.join(t, "z_custom.txt"), "w", encoding="utf-8") as f:
+                                            with open(os.path.join(target_dir, "z_custom.txt"), "w", encoding="utf-8") as f:
                                                 f.write(script_content)
                                             print(f"\033[1;32m + Installed to {exec_name} (Old Path)\033[0m")
                                             break
                                         except: pass
                     
-                    # 2. Cài đặt vào Executor MỚI (FIXED)
+                    # 3. Cài đặt vào Delta (Đường dẫn Android/data mới)
                     new_delta_paths = ExecutorManager.get_new_delta_paths()
                     if new_delta_paths:
-                         for base_path in new_delta_paths:
-                            # base_path: .../external/
+                        for base_path in new_delta_paths:
+                            # base_path: .../files/gloop/external/
                             target_subs = ["Autoexec", "autoexec", "Autoexecute"]
                             for sub in target_subs:
-                                target_dir = os.path.join(base_path, sub) # .../external/autoexec
+                                target_dir = os.path.join(base_path, sub)
                                 if os.path.exists(target_dir):
                                     try:
                                         with open(os.path.join(target_dir, "z_custom.txt"), "w", encoding="utf-8") as f:
                                             f.write(script_content)
                                         pkg_name = base_path.split("/Android/data/")[1].split("/")[0]
-                                        print(f"\033[1;32m + Installed to Delta (New Path): {pkg_name} (in {sub})\033[0m")
+                                        print(f"\033[1;32m + Installed to Delta: {pkg_name} (in {sub})\033[0m")
                                         break
                                     except: pass
 
             except Exception as e:
                 print(f"\033[1;31mError: {e}\033[0m")
             
-            input("\033[1;32mPress Enter to return...\033[0m")
+            input("\033[1;32mNhấn Enter để quay lại menu...\033[0m")
             continue
 
 if __name__ == "__main__":
