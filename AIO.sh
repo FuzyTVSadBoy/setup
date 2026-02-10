@@ -33,6 +33,7 @@ from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, Downlo
 from rich.layout import Layout
 from rich.live import Live
 from rich.table import Table
+from rich.rule import Rule
 from rich.style import Style
 from rich import box
 
