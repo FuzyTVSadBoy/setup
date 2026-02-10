@@ -323,7 +323,7 @@ SERVER_LINKS_FILE = "Shouko.dev/server-links.txt"
 ACCOUNTS_FILE = "Shouko.dev/accounts.txt"
 CONFIG_FILE = "Shouko.dev/config.json"
 
-version = "1.1.0 | Created By Shouko.dev | Bug Fixes and improve By Im Not Vi"
+version = "1.1.1 | Created By Shouko.dev | Bug Fixes and improve By Im Not Vi"
 
 class Utilities:
     @staticmethod
