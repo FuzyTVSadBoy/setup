@@ -16,7 +16,7 @@ fail() { echo -e "${RED}[X]${RESET} $1\r"; }
 line() { echo -e "${CYAN}------------------------------${RESET}\r"; }
 
 clear
-echo -e "${GREEN}===== UGPHONE AIO (FINAL UI FIX) =====${RESET}\r"
+echo -e "${GREEN}===== UGPHONE AIO (MEDIAFIRE MOD) =====${RESET}\r"
 line
 
 # ================== 1. BỘ NHỚ ==================
@@ -61,6 +61,7 @@ step "4/7" "Installing Libraries"
 pip cache purge >/dev/null 2>&1 || true
 
 echo -ne " -> Installing base libs... \r"
+# Vẫn giữ gdown để không lỗi code cũ nếu có, nhưng tải chính dùng requests
 pip install requests rich prettytable pytz gdown --no-cache-dir --quiet >/dev/null 2>&1
 
 echo -ne " -> Installing psutil (CFLAGS)... \r"
@@ -101,67 +102,70 @@ su -c "wm density 200; settings put global development_settings_enabled 1; setti
 ok "Window Optimized"
 line
 
-# ================== 7. APK INSTALLER (PYTHON UI FIX) ==================
+# ================== 7. APK INSTALLER (MEDIAFIRE FIX) ==================
 step "7/7" "Installing APKs"
 
 APK_ROOT="/sdcard/Download/auto_apk_root"
 rm -rf "$APK_ROOT"
 mkdir -p "$APK_ROOT"
 
-echo -e "${YELLOW} -> Downloading Folder from Drive...${RESET}\r"
+echo -e "${YELLOW} -> Downloading Files form Mediafire...${RESET}\r"
 
 # ------------------------------------------------------------------
-# PYTHON DOWNLOADER (FIXED UI)
+# PYTHON DOWNLOADER (DIRECT LINK MOD)
 # ------------------------------------------------------------------
 cat <<EOF > downloader.py
-import gdown
+import requests
 import os
-import shutil
-import re
 import sys
 
-# URL Folder Drive của bạn
-url = "https://drive.google.com/drive/folders/16dE9WRhm53lh7STAOGnwWPZya_c9WxOc"
-output_dir = "/sdcard/Download/.apk_tmp_py"
+# Danh sách link trực tiếp bạn đã cung cấp
+urls = [
+    "https://download2272.mediafire.com/6xz4xlxoffagKvtpi3FSD-dX6QqN8tfX6NHSRXSvn0Nz6jAZLG9V5FyYwX2Wvi0K_B6p0KjgeT1jMPN_TNoCC4Rh8WUEjDt0TtTxr2wDKu5Mdp6stol7j7nHeKHCnO1mErxTKvjDYuBESGwJ55xu_12q3yPkhXgdFPKGMCB4g6laiw/x5b9678xq6ut13d/DeltaGlobalCloneByCherry+1-2.706.750.apk.apk",
+    "https://download2264.mediafire.com/vi77ssprg8bgwmO2m2X5aYfbs1FAWWQI9nw9uu5i7GNvkHkFrMWLkFSSUzMTNfmOlhIt9COFrjSzMgkqHxw-6BlyXLCvgCBOCvQUaXwC_7BeArU3NAxiSWI8zKzmubxBLMgKu-g3qjQziBA-Xsh-MEt5nNJTqjNi8qmJ55DPlXTcwA/wyz9r4nwjbssnwg/DeltaGlobalCloneByCherry+2-2.706.750.apk.apk",
+    "https://download1591.mediafire.com/iqaccp5d39gg3D3f3M6x8wwD5JmsHWyBP9bWH_wQ4yQdy13TY1w8V8yXRGRC1G2I-fxz6uqIaq3jglds_LvIB1GSuL9RPMZNp1TtSHa2rhdFgHpQYSOCazn65XF2_fmuNmftAQdTIawaVEGljQ8p4Tk-a0TuvalwahVpR_MMehN7Lw/dsrr6vxd35l63j8/DeltaGlobalCloneByCherry+3-2.706.750.apk.apk"
+]
+
 final_dir = "/sdcard/Download/auto_apk_root"
 
-if os.path.exists(output_dir):
-    shutil.rmtree(output_dir)
-os.makedirs(output_dir)
-
 def log(msg):
-    # Hàm in có ký tự về đầu dòng để tránh bậc thang
     print(msg + "\r")
 
-try:
-    log("    Starting download...")
-    # Tải im lặng
-    files = gdown.download_folder(url, output=output_dir, quiet=True, use_cookies=False)
-    
-    if not files:
-        log("    [!] Retry with cookies...")
-        files = gdown.download_folder(url, output=output_dir, quiet=True, use_cookies=True)
-
-    if not files:
-        log("    [X] No files found!")
-    else:
-        log(f"    Downloaded {len(files)} file(s).")
+def download(url, index):
+    try:
+        # Lấy tên file từ URL và fix lỗi .apk.apk
+        filename = url.split('/')[-1]
+        if filename.endswith(".apk.apk"):
+            filename = filename[:-4] # Bỏ bớt 1 đuôi .apk
+            
+        path = os.path.join(final_dir, filename)
         
-        count = 0
-        for file_path in files:
-            if file_path.endswith(".apk"):
-                filename = os.path.basename(file_path)
-                safe_name = re.sub(r'[^a-zA-Z0-9.]', '_', filename)
-                shutil.move(file_path, os.path.join(final_dir, safe_name))
-                count += 1
+        log(f"    Downloading ({index}/3): {filename[:25]}...")
         
-        log(f"    Prepared {count} APK(s) for installation.")
+        # Giả lập User-Agent để tránh bị chặn 403
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        
+        r = requests.get(url, headers=headers, stream=True)
+        if r.status_code == 200:
+            with open(path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=1024):
+                    if chunk:
+                        f.write(chunk)
+            return True
+        else:
+            log(f"    [!] Failed HTTP {r.status_code}")
+            return False
+            
+    except Exception as e:
+        log(f"    [X] Error: {e}")
+        return False
 
-    if os.path.exists(output_dir):
-        shutil.rmtree(output_dir)
+count = 0
+for i, url in enumerate(urls, 1):
+    if download(url, i):
+        count += 1
 
-except Exception as e:
-    log(f"    [X] Error: {e}")
+log(f"    Prepared {count} APK(s) for installation.")
 EOF
 # ------------------------------------------------------------------
 
@@ -184,9 +188,9 @@ else
         
         chmod 644 "$FULL_PATH"
         if su -c "pm install -r \"$FULL_PATH\"" >/dev/null 2>&1; then
-            echo -e "   [+] $shortname: ${GREEN}OK${RESET}\r"
+            echo -e "    [+] $shortname: ${GREEN}OK${RESET}\r"
         else
-            echo -e "   [-] $shortname: ${YELLOW}GUI${RESET}\r"
+            echo -e "    [-] $shortname: ${YELLOW}GUI${RESET}\r"
             am start -a android.intent.action.VIEW -d "file://$FULL_PATH" -t application/vnd.android.package-archive >/dev/null 2>&1
             sleep 1
         fi
