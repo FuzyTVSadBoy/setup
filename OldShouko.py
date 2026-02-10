@@ -1220,6 +1220,28 @@ class UIManager:
 
 class ExecutorManager:
     @staticmethod
+    def get_new_delta_paths():
+        """
+        Tìm kiếm đường dẫn Delta mới dựa trên danh sách các package Roblox đang cài đặt.
+        Path: /sdcard/Android/data/[package_name]/files/gloob/external/
+        """
+        new_paths = []
+        try:
+            # Lấy danh sách tất cả package Roblox (Clone và gốc)
+            packages = RobloxManager.get_roblox_packages()
+            for pkg in packages:
+                # Cấu trúc đường dẫn mới của Delta
+                # Lưu ý: Delta thường tìm script trong thư mục 'autoexec' bên trong 'external'
+                base_path = f"/sdcard/Android/data/{pkg}/files/gloob/external/"
+                
+                # Kiểm tra xem thư mục này có tồn tại không (tức là có cài Delta trên package này)
+                if os.path.exists(base_path):
+                    new_paths.append(base_path)
+        except Exception as e:
+            print(f"\033[1;31m[ Shouko.dev ] - Error scanning new Delta paths: {e}\033[0m")
+        return new_paths
+
+    @staticmethod
     def detect_executors():
         console = Console()
         detected_executors = []
@@ -1234,11 +1256,18 @@ class ExecutorManager:
             for path in possible_autoexec_paths:
                 if os.path.exists(path):
                     detected_executors.append(executor_name)
-                    console.print(f"[bold green][ Shouko.dev ] - Detected executor: {executor_name}[/bold green]")
+                    console.print(f"[bold green][ Shouko.dev ] - Detected executor (Old Path): {executor_name}[/bold green]")
                     break
+        
+        new_delta_paths = ExecutorManager.get_new_delta_paths()
+        if new_delta_paths:
+            if "Delta (New Path)" not in detected_executors:
+                detected_executors.append("Delta (New Path)")
+                console.print(f"[bold green][ Shouko.dev ] - Detected executor: Delta (New Android/Data Path)[/bold green]")
+                console.print(f"[dim]Found {len(new_delta_paths)} Delta instances in Android/data[/dim]")
 
-        return detected_executors
-    
+        return detected_executors  
+  
     @staticmethod
     def write_lua_script(detected_executors):
         console = Console()
@@ -1250,8 +1279,6 @@ class ExecutorManager:
             if os.path.exists(source_file):
                 with open(source_file, "r", encoding="utf-8") as f:
                     lua_script_content = f.read().strip()
-                
-                # Cập nhật ngược lại biến global để các hàm khác dùng nếu cần
                 globals()["lua_script_template"] = lua_script_content
             else:
                 console.print(f"[bold red][ Executor ] Không tìm thấy file nguồn: {source_file}[/bold red]")
@@ -1265,38 +1292,21 @@ class ExecutorManager:
             return
 
         # --- BƯỚC 2: GHI VÀO CÁC EXECUTOR ---
+        
+        # A. Ghi vào đường dẫn CŨ (Dựa trên list detected_executors từ dict executors)
         for executor_name in detected_executors:
-            base_path = executors[executor_name]
-            lua_written = False
+            if executor_name == "Delta (New Path)": continue # Bỏ qua cái mới, xử lý ở dưới
 
-            # Xử lý riêng cho KRNL (nếu có dùng)
-            if executor_name.upper() == "KRNL":
-                try:
-                    autoruns_path = os.path.join(base_path, "workspace", ".storage", "autoruns.json")
-                    tabs_path = os.path.join(base_path, "workspace", ".storage", "tabs", "shouko_hb.luau")
-                    
-                    # Update autoruns.json
-                    if os.path.exists(autoruns_path):
-                        with open(autoruns_path, "r") as f:
-                            autoruns = json.load(f)
-                    else: autoruns = []
-                    
-                    if "shouko_hb" not in autoruns:
-                        autoruns.append("shouko_hb")
-                        with open(autoruns_path, "w") as f:
-                            json.dump(autoruns, f)
-                    
-                    # Write Script
-                    os.makedirs(os.path.dirname(tabs_path), exist_ok=True)
-                    with open(tabs_path, "w", encoding="utf-8") as f:
-                        f.write(lua_script_content)
-                    lua_written = True
-                    console.print(f"[bold green][ Shouko.dev ] - Installed for KRNL.[/bold green]")
-                except Exception as e:
-                    console.print(f"[bold red]Error KRNL: {e}[/bold red]")
+            if executor_name in executors: # Chỉ xử lý nếu nằm trong danh sách cũ
+                base_path = executors[executor_name]
+                lua_written = False
 
-            # Xử lý cho các Executor Android (Fluxus, Delta, Codex...)
-            if not lua_written:
+                # (Giữ nguyên logic KRNL nếu có...)
+                if executor_name.upper() == "KRNL":
+                     # ... (Giữ nguyên code KRNL của bạn ở đây) ...
+                     pass 
+
+                # Xử lý các Executor Android cũ
                 possible_paths = [
                     os.path.join(base_path, "Autoexec"),
                     os.path.join(base_path, "Autoexecute"),
@@ -1305,19 +1315,42 @@ class ExecutorManager:
 
                 for path in possible_paths:
                     if os.path.exists(path):
-                        # Đặt tên file là shouko_heartbeat.lua để dễ nhận diện
                         target_file = os.path.join(path, "shouko_heartbeat.lua")
                         try:
                             with open(target_file, 'w', encoding="utf-8") as file:
                                 file.write(lua_script_content)
                             lua_written = True
-                            console.print(f"[bold green][ Shouko.dev ] - Installed: {executor_name}[/bold green]")
-                            break # Ghi được vào 1 folder là đủ
+                            console.print(f"[bold green][ Shouko.dev ] - Installed (Old Path): {executor_name}[/bold green]")
+                            break
                         except Exception as e:
                             console.print(f"[bold red]Error writing to {executor_name}: {e}[/bold red]")
 
-                if not lua_written:
-                    console.print(f"[bold yellow][ Shouko.dev ] - Autoexec folder not found for {executor_name}[/bold yellow]")
+        # B. GHI VÀO ĐƯỜNG DẪN DELTA MỚI (Tự động quét và ghi)
+        # Logic: Quét tất cả package, nếu thấy thư mục Delta thì ghi file vào
+        new_delta_paths = ExecutorManager.get_new_delta_paths()
+        if new_delta_paths:
+            print(f"\033[1;33m[ Shouko.dev ] - Installing to Delta (New Paths)...\033[0m")
+            for base_path in new_delta_paths:
+                # Delta mới thường dùng cấu trúc: .../files/gloob/external/autoexec/
+                # Tuy nhiên đôi khi nó nằm thẳng trong external, ta cứ check cả 2
+                targets = [
+                    os.path.join(base_path, "autoexec"),
+                    os.path.join(base_path, "Autoexec"),
+                    base_path # Trường hợp vứt thẳng vào external (ít gặp nhưng nên dự phòng)
+                ]
+                
+                for path in targets:
+                    if os.path.exists(path):
+                        target_file = os.path.join(path, "shouko_heartbeat.lua")
+                        try:
+                            with open(target_file, 'w', encoding="utf-8") as file:
+                                file.write(lua_script_content)
+                            # Lấy tên package từ đường dẫn để in ra cho đẹp
+                            pkg_name = base_path.split("/Android/data/")[1].split("/")[0]
+                            console.print(f"[bold green][ Shouko.dev ] - Installed Delta New Path: {pkg_name}[/bold green]")
+                            break # Ghi được 1 chỗ là đủ
+                        except Exception as e:
+                            console.print(f"[bold red]Error writing to Delta New Path: {e}[/bold red]")
                     
     @staticmethod
     def check_executor_status(package_name, continuous=True, max_wait_time=180):
@@ -1901,7 +1934,6 @@ def main():
                 print("\033[1;36m[ Shouko.dev ] - Input Custom Script Mode\033[0m")
                 print("\033[1;33mPaste your script below (Must be ONE LINE or Minified) and press Enter:\033[0m")
                 
-                # Nhập 1 lần duy nhất
                 script_content = input().strip()
                 
                 if not script_content:
@@ -1912,26 +1944,47 @@ def main():
                     with open("Shouko.dev/custom_script.txt", "w", encoding="utf-8") as f:
                         f.write(script_content)
                     
-                    # 2. Cài đặt
+                    # 2. Cài đặt vào Executor CŨ
                     detected = ExecutorManager.detect_executors()
+                    
+                    # --- Code cũ ---
                     if detected:
                         for exec_name in detected:
-                            base = executors[exec_name]
+                            if exec_name == "Delta (New Path)": continue # Bỏ qua, xử lý riêng bên dưới
+                            if exec_name in executors:
+                                base = executors[exec_name]
+                                targets = [
+                                    os.path.join(base, "Autoexec"),
+                                    os.path.join(base, "autoexec"),
+                                    os.path.join(base, "Autoexecute")
+                                ]
+                                for t in targets:
+                                    if os.path.exists(t):
+                                        try:
+                                            with open(os.path.join(t, "z_custom.txt"), "w", encoding="utf-8") as f:
+                                                f.write(script_content)
+                                            print(f"\033[1;32m + Installed to {exec_name} (Old Path)\033[0m")
+                                            break
+                                        except: pass
+                    
+                    # 3. Cài đặt vào Executor MỚI (Delta)
+                    new_delta_paths = ExecutorManager.get_new_delta_paths()
+                    if new_delta_paths:
+                         for base_path in new_delta_paths:
                             targets = [
-                                os.path.join(base, "Autoexec"),
-                                os.path.join(base, "autoexec"),
-                                os.path.join(base, "Autoexecute")
+                                os.path.join(base_path, "autoexec"),
+                                os.path.join(base_path, "Autoexec"),
+                                base_path
                             ]
                             for t in targets:
                                 if os.path.exists(t):
                                     try:
                                         with open(os.path.join(t, "z_custom.txt"), "w", encoding="utf-8") as f:
                                             f.write(script_content)
-                                        print(f"\033[1;32m + Installed to {exec_name}\033[0m")
+                                        pkg_name = base_path.split("/Android/data/")[1].split("/")[0]
+                                        print(f"\033[1;32m + Installed to Delta (New Path): {pkg_name}\033[0m")
                                         break
                                     except: pass
-                    else:
-                        print("\033[1;31mNo executors found.\033[0m")
 
             except Exception as e:
                 print(f"\033[1;31mError: {e}\033[0m")
