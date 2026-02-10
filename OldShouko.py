@@ -234,8 +234,6 @@ executors = {
     "Cryptic Clone 018": "/storage/emulated/0/RobloxClone018/Cryptic/",
     "Cryptic Clone 019": "/storage/emulated/0/RobloxClone019/Cryptic/",
     "Cryptic Clone 020": "/storage/emulated/0/RobloxClone020/Cryptic/",
-    "KRNL": "/storage/emulated/0/krnl/",
-    "Trigon": "/storage/emulated/0/Trigon/",
     "FrostWare": "/storage/emulated/0/FrostWare/",
     "FrostWare Clone 001": "/storage/emulated/0/RobloxClone001/FrostWare/",
     "FrostWare Clone 002": "/storage/emulated/0/RobloxClone002/FrostWare/",
@@ -257,24 +255,23 @@ executors = {
     "FrostWare Clone 018": "/storage/emulated/0/RobloxClone018/FrostWare/",
     "FrostWare Clone 019": "/storage/emulated/0/RobloxClone019/FrostWare/",
     "FrostWare Clone 020": "/storage/emulated/0/RobloxClone020/FrostWare/",
-    "Evon": "/storage/emulated/0/Evon/",
 }
 
-# --- AUTO DETECT WORKSPACE PATHS (UPDATED FOR DELTA) ---
+# --- AUTO DETECT WORKSPACE PATHS (FIXED FOR DELTA) ---
 def find_all_workspaces():
     possible_paths = set()
 
     # 1. Thêm các đường dẫn Executor CŨ (từ biến executors)
-    # Giữ lại để tương thích với Fluxus, Codex cũ...
     for base_path in executors.values():
         possible_paths.add(os.path.join(base_path, "Workspace"))
         possible_paths.add(os.path.join(base_path, "workspace"))
     
     # 2. Thêm đường dẫn DELTA MỚI (Android/data) - QUAN TRỌNG
-    # Cấu trúc: /sdcard/Android/data/[package_name]/files/gloob/external/workspace
     try:
         # Lấy prefix package từ config hoặc mặc định là com.roblox
         prefix = globals().get("package_prefix", "com.roblox")
+        
+        # Chạy lệnh shell để lấy danh sách package
         cmd = f"pm list packages {prefix} | sed 's/package://'"
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
         
@@ -282,27 +279,38 @@ def find_all_workspaces():
             for line in result.stdout.strip().splitlines():
                 pkg = line.strip()
                 if pkg:
-                    # Đường dẫn gốc của Delta mới
+                    # Đường dẫn gốc của Delta mới: .../files/gloob/external/
                     delta_external = f"/sdcard/Android/data/{pkg}/files/gloob/external/"
+                    
+                    # Thêm workspace trong external
                     possible_paths.add(os.path.join(delta_external, "workspace"))
                     possible_paths.add(os.path.join(delta_external, "Workspace"))
+
+                    # Dự phòng: Đôi khi nó nằm thẳng trong files/workspace
+                    possible_paths.add(f"/sdcard/Android/data/{pkg}/files/workspace")
+                    possible_paths.add(f"/sdcard/Android/data/{pkg}/files/Workspace")
+
     except Exception as e:
         print(f"\033[1;31m[ Shouko.dev ] - Error scanning Delta workspaces: {e}\033[0m")
+
+    # 3. Quét các thư mục gốc thông thường (Backup)
     common_roots = ["/storage/emulated/0", "/sdcard", "/storage/emulated/0/Download"]
     for root in common_roots:
         if os.path.exists(root):
             try:
+                # Quét độ sâu tối đa là 3 folder để tránh lag
                 for dirpath, dirnames, _ in os.walk(root, topdown=True):
-                    if dirpath.count(os.path.sep) - root.count(os.path.sep) > 2:
+                    if dirpath.count(os.path.sep) - root.count(os.path.sep) > 3:
                         del dirnames[:]; continue
                     for d in dirnames:
                         if d.lower() == "workspace": 
                             possible_paths.add(os.path.join(dirpath, d))
             except: pass
+            
+    # 4. Chỉ trả về những đường dẫn thực sự TỒN TẠI
     final_paths = [p for p in possible_paths if os.path.exists(p) and os.path.isdir(p)]
+    
     return final_paths
-
-    return [p for p in possible_paths if os.path.exists(p) and os.path.isdir(p)]
 
 workspace_paths = find_all_workspaces()
 globals()["workspace_paths"] = workspace_paths
@@ -315,7 +323,7 @@ SERVER_LINKS_FILE = "Shouko.dev/server-links.txt"
 ACCOUNTS_FILE = "Shouko.dev/accounts.txt"
 CONFIG_FILE = "Shouko.dev/config.json"
 
-version = "2.2.6 | Created By Shouko.dev | Bug Fixes By Nexus Hideout"
+version = "1.1.0 | Created By Shouko.dev | Bug Fixes and improve By Im Not Vi"
 
 class Utilities:
     @staticmethod
