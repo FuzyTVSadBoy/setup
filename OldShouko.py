@@ -1828,8 +1828,10 @@ def main():
                 fr_input = input("\033[1;93mForce rejoin (min/q): \033[0m")
                 fr_int = float('inf') if fr_input.lower() == 'q' else int(fr_input) * 60
 
+                # START
                 RobloxManager.kill_roblox_processes(); time.sleep(2)
                 
+                # --- ĐÂY LÀ DÒNG BỊ LỖI, ĐÃ SỬA LẠI ---
                 Runner.launch_package_sequentially(server_links) 
                 # --------------------------------------
 
