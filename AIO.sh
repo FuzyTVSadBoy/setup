@@ -4,7 +4,7 @@
 # BOOTLOADER: KHỞI TẠO MÔI TRƯỜNG
 # ==============================================================================
 clear
-echo -e "\033[1;32m[>] Initializing UGPHONE MONOLITH SYSTEM v7.3...\033[0m"
+echo -e "\033[1;32m[>] Initializing UGPHONE MONOLITH SYSTEM v7.3 (Fix)...\033[0m"
 
 if ! command -v python >/dev/null 2>&1; then
     echo " -> Installing Python..."
@@ -13,7 +13,7 @@ fi
 pip install rich requests psutil pyfiglet --no-cache-dir --quiet >/dev/null 2>&1
 
 # ==============================================================================
-# MAIN PYTHON SCRIPT (v7.3 HEAVY EDITION)
+# MAIN PYTHON SCRIPT (v7.3 HEAVY EDITION - FIXED IMPORT)
 # ==============================================================================
 cat <<EOF > run_aio.py
 import os
@@ -38,7 +38,8 @@ from rich.align import Align
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TransferSpeedColumn, TimeRemainingColumn, FileSizeColumn
 from rich import box
 from rich.style import Style
-from rich.group import Group
+# --- FIX LỖI IMPORT TẠI ĐÂY ---
+from rich.console import Group 
 
 # ==============================================================================
 # CONFIGURATION
