@@ -15,7 +15,7 @@ fi
 pip install rich requests psutil pyfiglet --no-cache-dir --quiet >/dev/null 2>&1
 
 # ==============================================================================
-# MAIN PYTHON SCRIPT (CYBERPUNK EDITION - PERMISSION FIX)
+# MAIN PYTHON SCRIPT (v3.2 STABLE - TABLE FIX)
 # ==============================================================================
 cat <<EOF > run_aio.py
 import os
@@ -73,7 +73,7 @@ def make_header():
         title = "UGPHONE AIO"
     
     return Panel(
-        Align.center(f"[bold magenta]{title}[/bold magenta]\n[white]Ultimate Setup Tool v3.1 (Fix)[/white]"),
+        Align.center(f"[bold magenta]{title}[/bold magenta]\n[white]Ultimate Setup Tool v3.2 (Stable)[/white]"),
         box=box.ROUNDED,
         border_style="cyan"
     )
@@ -224,42 +224,58 @@ def main():
             except:
                 console.print(f"[red]Failed: {filename}[/red]")
 
-    # --- CHUYỂN CẢNH: INSTALLER INTERFACE ---
+    # --- CHUYỂN CẢNH: INSTALLER INTERFACE (ĐÃ FIX LỖI TABLE) ---
     console.clear()
     console.print(make_header())
     
     files = [f for f in os.listdir(DOWNLOAD_DIR) if f.endswith(".apk")]
     
-    install_table = Table(title="[bold yellow]INSTALLATION QUEUE[/bold yellow]", expand=True, box=box.ROUNDED, border_style="green")
-    install_table.add_column("APK Name", style="white")
-    install_table.add_column("Progress", style="dim")
-    install_table.add_column("Result", justify="right")
+    # Danh sách lưu trạng thái cài đặt
+    install_data = [] # Mỗi phần tử: [Name, Status, Result]
 
-    with Live(install_table, refresh_per_second=4, console=console):
+    def build_install_table():
+        table = Table(title="[bold yellow]INSTALLATION QUEUE[/bold yellow]", expand=True, box=box.ROUNDED, border_style="green")
+        table.add_column("APK Name", style="white")
+        table.add_column("Progress", style="dim")
+        table.add_column("Result", justify="right")
+        
+        for row in install_data:
+            table.add_row(*row)
+        return table
+
+    # Dùng Live để update toàn bộ bảng mỗi khi data thay đổi
+    with Live(build_install_table(), refresh_per_second=4, console=console) as live:
         for apk in files:
             short_name = (apk[:25] + '..') if len(apk) > 25 else apk
             full_path = os.path.join(DOWNLOAD_DIR, apk)
             
-            # --- FIX: Bọc chmod trong try-except để tránh lỗi PermissionError ---
+            # 1. Thêm vào danh sách với trạng thái Đang cài
+            install_data.append([short_name, "Installing...", "⏳"])
+            live.update(build_install_table()) # Vẽ lại bảng ngay
+            
+            # --- FIX QUYỀN TRUY CẬP (SỐNG CHUNG VỚI LŨ) ---
             try:
                 os.chmod(full_path, 0o644)
             except Exception:
-                pass # Bỏ qua nếu không set được quyền (sdcard)
-            # -----------------------------------------------------------------
+                pass 
+            # -----------------------------------------------
             
-            install_table.add_row(short_name, "Installing...", "⏳")
-            
+            # 2. Chạy lệnh cài đặt
             cmd = f'su -c "pm install -r \\"{full_path}\\""'
             if run_cmd(cmd):
-                install_table.rows[-1].set_cell(1, "[bold green]Done[/bold green]")
-                install_table.rows[-1].set_cell(2, "[bold green]SUCCESS[/bold green]")
+                # 3. Cập nhật trạng thái thành công (Sửa trực tiếp trong Data List)
+                install_data[-1][1] = "[bold green]Done[/bold green]"
+                install_data[-1][2] = "[bold green]SUCCESS[/bold green]"
             else:
-                install_table.rows[-1].set_cell(1, "[red]Error[/red]")
-                install_table.rows[-1].set_cell(2, "[bold red]FAIL[/bold red]")
+                # 3. Cập nhật trạng thái thất bại
+                install_data[-1][1] = "[red]Error[/red]"
+                install_data[-1][2] = "[bold red]FAIL[/bold red]"
                 try:
                     subprocess.run(f'am start -a android.intent.action.VIEW -d "file://{full_path}" -t application/vnd.android.package-archive', shell=True, stderr=subprocess.DEVNULL)
                 except: pass
             
+            # 4. Vẽ lại bảng lần nữa
+            live.update(build_install_table())
             time.sleep(0.5)
 
     console.print(Panel(
