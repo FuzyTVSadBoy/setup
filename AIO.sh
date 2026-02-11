@@ -4,7 +4,7 @@
 # BOOTLOADER: KHỞI TẠO MÔI TRƯỜNG
 # ==============================================================================
 clear
-echo -e "\033[1;32m[>] Initializing UGPHONE MONOLITH SYSTEM v7.3 (Fix)...\033[0m"
+echo -e "\033[1;32m[>] Initializing UGPHONE PIXELDRAIN SYSTEM v7.4...\033[0m"
 
 if ! command -v python >/dev/null 2>&1; then
     echo " -> Installing Python..."
@@ -13,7 +13,7 @@ fi
 pip install rich requests psutil pyfiglet --no-cache-dir --quiet >/dev/null 2>&1
 
 # ==============================================================================
-# MAIN PYTHON SCRIPT (v7.3 HEAVY EDITION - FIXED IMPORT)
+# MAIN PYTHON SCRIPT (v7.4 PIXELDRAIN EDITION)
 # ==============================================================================
 cat <<EOF > run_aio.py
 import os
@@ -38,8 +38,7 @@ from rich.align import Align
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TransferSpeedColumn, TimeRemainingColumn, FileSizeColumn
 from rich import box
 from rich.style import Style
-# --- FIX LỖI IMPORT TẠI ĐÂY ---
-from rich.console import Group 
+from rich.group import Group
 
 # ==============================================================================
 # CONFIGURATION
@@ -49,7 +48,7 @@ DOWNLOAD_DIR = "/sdcard/Download/auto_apk_root"
 TERMUX_HOME = os.environ["HOME"] 
 TOOL_URL = "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/OldShouko.py"
 
-# DANH SÁCH LINK MEDIAFIRE
+# DANH SÁCH LINK PIXELDRAIN (Tương ứng Clone 1, 2, 3)
 TARGET_LINKS = [
     "https://pixeldrain.com/api/file/qTMZ8NVA?download",
     "https://pixeldrain.com/api/file/bcccMBDy?download",
@@ -70,21 +69,6 @@ def run_cmd(command, timeout=20):
     except subprocess.TimeoutExpired:
         return None
     except Exception:
-        return None
-
-def get_mediafire_direct(url):
-    """
-    Lấy link tải trực tiếp từ Mediafire (Bypass Key).
-    """
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        res = requests.get(url, headers=headers, timeout=15)
-        # Regex tìm link trong nút Download
-        match = re.search(r'href="((http|https)://download[^"]+)', res.text)
-        if match:
-            return match.group(1)
-        return None
-    except:
         return None
 
 def get_file_status(filename):
@@ -122,7 +106,7 @@ def make_header():
         title = "UGPHONE AIO"
     
     return Panel(
-        Align.center(f"[bold magenta]{title}[/bold magenta]\n[cyan]v7.3 Monolith Edition (Stable UI)[/cyan]"),
+        Align.center(f"[bold magenta]{title}[/bold magenta]\n[cyan]v7.4 Pixeldrain Edition (Monolith UI)[/cyan]"),
         box=box.HEAVY, border_style="magenta", padding=(0, 0)
     )
 
@@ -198,21 +182,17 @@ def main():
 
         # Vòng lặp thực thi Init
         for i, task in enumerate(init_tasks):
-            # Cập nhật trạng thái "Running"
             init_tasks[i]["status"] = "[yellow]Processing...[/yellow]"
             
-            # Tạo data cho bảng
             rows = [[t["name"], t["status"]] for t in init_tasks]
             layout["body"].update(generate_table("SYSTEM BOOT SEQUENCE", init_cols, rows))
             
-            # Chạy lệnh (nếu là setup storage thì check trước để đỡ treo)
             if "termux-setup-storage" in task["cmd"]:
                 if not os.path.exists("/data/data/com.termux/files/home/storage"):
                      run_cmd(task["cmd"], timeout=5)
             else:
                 run_cmd(task["cmd"], timeout=3)
             
-            # Cập nhật trạng thái "Done"
             init_tasks[i]["status"] = "[green]COMPLETED ✅[/green]"
             rows = [[t["name"], t["status"]] for t in init_tasks]
             layout["body"].update(generate_table("SYSTEM BOOT SEQUENCE", init_cols, rows))
@@ -223,16 +203,17 @@ def main():
         # ------------------------------------------------------------------
         # PHASE 2: FILE INTEGRITY CHECK (BẢNG INVENTORY)
         # ------------------------------------------------------------------
-        # Chuẩn bị dữ liệu file
+        # Chuẩn bị dữ liệu file (Tự đặt tên chuẩn vì Pixeldrain link dạng mã hóa)
         file_map = []
-        for url in TARGET_LINKS:
-            fake_name = url.split('/')[-2]
-            if not fake_name.endswith(".apk"): fake_name += ".apk"
-            exists, size_str = get_file_status(fake_name)
+        for i, url in enumerate(TARGET_LINKS):
+            # Tự động đặt tên Delta_Clone_1.apk, _2.apk...
+            clean_name = f"Delta_Clone_ByCherry_{i+1}.apk"
+            
+            exists, size_str = get_file_status(clean_name)
             file_map.append({
                 "url": url,
-                "name": fake_name,
-                "path": os.path.join(DOWNLOAD_DIR, fake_name),
+                "name": clean_name,
+                "path": os.path.join(DOWNLOAD_DIR, clean_name),
                 "exists": exists,
                 "size_str": size_str
             })
@@ -250,7 +231,7 @@ def main():
             check_rows.append([item["name"], item["size_str"], status])
         
         layout["body"].update(generate_table("FILE INTEGRITY VERIFICATION", check_cols, check_rows))
-        time.sleep(3) # Cho người dùng đọc kỹ
+        time.sleep(3) 
 
         # ------------------------------------------------------------------
         # PHASE 3: DOWNLOAD MANAGER (PROGRESS PANEL)
@@ -258,7 +239,6 @@ def main():
         files_to_download = [f for f in file_map if not f["exists"]]
         
         if files_to_download:
-            # Tạo đối tượng Progress
             download_progress = Progress(
                 SpinnerColumn(style="bold magenta"),
                 TextColumn("[bold blue]{task.fields[filename]}"),
@@ -268,48 +248,39 @@ def main():
                 TransferSpeedColumn(),
             )
             
-            # Nhúng Progress vào Panel để hiển thị trong Layout
-            dl_panel = Panel(download_progress, title="[bold yellow]DOWNLOADING RESOURCES[/bold yellow]", border_style="cyan")
+            dl_panel = Panel(download_progress, title="[bold yellow]DOWNLOADING FROM PIXELDRAIN[/bold yellow]", border_style="cyan")
             layout["body"].update(dl_panel)
             
-            # Tạo task cho Progress bar
             dl_tasks = []
             for item in files_to_download:
                 tid = download_progress.add_task("dl", filename=item["name"], total=None)
                 dl_tasks.append({"tid": tid, "item": item})
             
-            # Thực hiện tải
             for task_data in dl_tasks:
                 tid = task_data["tid"]
                 item = task_data["item"]
                 
-                download_progress.update(tid, description="Fetching Key...")
-                direct_link = get_mediafire_direct(item["url"])
-                
-                if direct_link:
-                    try:
-                        res = requests.get(direct_link, stream=True, timeout=20)
-                        total_size = int(res.headers.get('content-length', 0))
-                        download_progress.update(tid, total=total_size)
-                        
-                        with open(item["path"], 'wb') as f:
-                            for chunk in res.iter_content(chunk_size=32768):
-                                if chunk:
-                                    f.write(chunk)
-                                    download_progress.update(tid, advance=len(chunk))
-                    except:
-                        download_progress.console.print(f"[red]Error downloading {item['name']}[/red]")
-                else:
-                    download_progress.console.print(f"[red]Link Expired: {item['name']}[/red]")
+                download_progress.update(tid, description="Connecting...")
+                # Pixeldrain API link là direct link luôn
+                try:
+                    res = requests.get(item["url"], stream=True, timeout=30)
+                    total_size = int(res.headers.get('content-length', 0))
+                    download_progress.update(tid, total=total_size)
+                    
+                    with open(item["path"], 'wb') as f:
+                        for chunk in res.iter_content(chunk_size=32768):
+                            if chunk:
+                                f.write(chunk)
+                                download_progress.update(tid, advance=len(chunk))
+                except:
+                    download_progress.console.print(f"[red]Error downloading {item['name']}[/red]")
         else:
-            # Nếu không cần tải gì cả
             layout["body"].update(Panel(Align.center("[bold green]ALL FILES ARE PRESENT. SKIPPING DOWNLOAD.[/bold green]"), border_style="green"))
             time.sleep(2)
 
         # ------------------------------------------------------------------
         # PHASE 4: INSTALLATION (REALTIME UPDATE TABLE)
         # ------------------------------------------------------------------
-        # Khởi tạo trạng thái cho bảng cài đặt
         inst_states = []
         for item in file_map:
             inst_states.append({
@@ -327,17 +298,14 @@ def main():
             {"name": "Final Result", "justify": "right", "style": "bold"}
         ]
 
-        # Hàm helper để render bảng cài đặt từ state hiện tại
         def render_install_table():
             rows = []
             for s in inst_states:
                 rows.append([s["name"], s["stage_copy"], s["stage_install"], s["result"]])
             return generate_table("PACKAGE INSTALLATION QUEUE", inst_cols, rows)
 
-        # Update lần đầu
         layout["body"].update(render_install_table())
 
-        # Vòng lặp cài đặt
         for i, state in enumerate(inst_states):
             tmp_path = os.path.join(TERMUX_HOME, f"installer_{i}.apk")
             
@@ -361,7 +329,6 @@ def main():
             layout["body"].update(render_install_table())
             
             cmd = f'su -c "pm install -r {tmp_path}"'
-            # Timeout 45s cho việc cài đặt
             res = run_cmd(cmd, timeout=45)
             
             if res and ("Success" in res.stdout or "Success" in res.stderr):
@@ -371,7 +338,6 @@ def main():
                 inst_states[i]["stage_install"] = "[red]Failed[/red]"
                 inst_states[i]["result"] = "[bold red]ERROR ❌[/bold red]"
             
-            # Cleanup
             if os.path.exists(tmp_path): os.remove(tmp_path)
             
             layout["body"].update(render_install_table())
