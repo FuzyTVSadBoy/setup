@@ -4,7 +4,7 @@
 # BOOTLOADER: KHỞI TẠO MÔI TRƯỜNG
 # ==============================================================================
 clear
-echo -e "\033[1;32m[>] Initializing UGPHONE PIXELDRAIN SYSTEM v7.4...\033[0m"
+echo -e "\033[1;32m[>] Initializing UGPHONE PIXELDRAIN SYSTEM v7.4 (Fixed)...\033[0m"
 
 if ! command -v python >/dev/null 2>&1; then
     echo " -> Installing Python..."
@@ -13,7 +13,7 @@ fi
 pip install rich requests psutil pyfiglet --no-cache-dir --quiet >/dev/null 2>&1
 
 # ==============================================================================
-# MAIN PYTHON SCRIPT (v7.4 PIXELDRAIN EDITION)
+# MAIN PYTHON SCRIPT (v7.4 FIXED RICH IMPORT)
 # ==============================================================================
 cat <<EOF > run_aio.py
 import os
@@ -38,7 +38,10 @@ from rich.align import Align
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TransferSpeedColumn, TimeRemainingColumn, FileSizeColumn
 from rich import box
 from rich.style import Style
-from rich.group import Group
+
+# --- [FIX] SỬA LỖI IMPORT TẠI ĐÂY ---
+# Thay vì 'from rich.group import Group' (đã bị xóa), ta dùng:
+from rich.console import Group 
 
 # ==============================================================================
 # CONFIGURATION
@@ -48,7 +51,7 @@ DOWNLOAD_DIR = "/sdcard/Download/auto_apk_root"
 TERMUX_HOME = os.environ["HOME"] 
 TOOL_URL = "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/OldShouko.py"
 
-# DANH SÁCH LINK PIXELDRAIN (Tương ứng Clone 1, 2, 3)
+# DANH SÁCH LINK PIXELDRAIN
 TARGET_LINKS = [
     "https://pixeldrain.com/api/file/qTMZ8NVA?download",
     "https://pixeldrain.com/api/file/bcccMBDy?download",
@@ -61,7 +64,7 @@ TARGET_LINKS = [
 
 def run_cmd(command, timeout=20):
     """
-    Thực thi lệnh shell với timeout để tránh treo (Anti-Freeze).
+    Thực thi lệnh shell với timeout để tránh treo.
     """
     try:
         result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=timeout)
@@ -106,17 +109,16 @@ def make_header():
         title = "UGPHONE AIO"
     
     return Panel(
-        Align.center(f"[bold magenta]{title}[/bold magenta]\n[cyan]v7.4 Pixeldrain Edition (Monolith UI)[/cyan]"),
+        Align.center(f"[bold magenta]{title}[/bold magenta]\n[cyan]v7.4 Pixeldrain Edition (Fixed)[/cyan]"),
         box=box.HEAVY, border_style="magenta", padding=(0, 0)
     )
 
 def make_info_panel():
-    """Tạo bảng Info đầy đủ, không bị trống"""
+    """Tạo bảng Info đầy đủ"""
     uname = platform.uname()
     ram = psutil.virtual_memory()
     disk = psutil.disk_usage('/')
     
-    # Grid 4 cột (Label - Value | Label - Value)
     grid = Table.grid(expand=True, padding=(0, 2))
     grid.add_column(justify="right", style="bold cyan")
     grid.add_column(justify="left", style="white")
@@ -156,16 +158,14 @@ def main():
         Layout(name="body")
     )
     
-    # Set nội dung tĩnh ban đầu
     layout["header"].update(make_header())
     layout["info"].update(make_info_panel())
     layout["body"].update(Panel(Align.center("[yellow]Initializing System...[/yellow]"), border_style="white"))
 
-    # Bắt đầu Live Loop
     with Live(layout, refresh_per_second=10, screen=True):
         
         # ------------------------------------------------------------------
-        # PHASE 1: SYSTEM INITIALIZATION (BẢNG INIT)
+        # PHASE 1: SYSTEM INITIALIZATION
         # ------------------------------------------------------------------
         init_tasks = [
             {"name": "Check Root Privileges", "cmd": 'su -c "id"', "status": "Pending"},
@@ -180,7 +180,6 @@ def main():
             {"name": "Status", "justify": "right", "style": "bold"}
         ]
 
-        # Vòng lặp thực thi Init
         for i, task in enumerate(init_tasks):
             init_tasks[i]["status"] = "[yellow]Processing...[/yellow]"
             
@@ -198,15 +197,14 @@ def main():
             layout["body"].update(generate_table("SYSTEM BOOT SEQUENCE", init_cols, rows))
             time.sleep(0.2)
 
-        time.sleep(1) # Pause
+        time.sleep(1)
 
         # ------------------------------------------------------------------
-        # PHASE 2: FILE INTEGRITY CHECK (BẢNG INVENTORY)
+        # PHASE 2: FILE INTEGRITY CHECK
         # ------------------------------------------------------------------
-        # Chuẩn bị dữ liệu file (Tự đặt tên chuẩn vì Pixeldrain link dạng mã hóa)
         file_map = []
         for i, url in enumerate(TARGET_LINKS):
-            # Tự động đặt tên Delta_Clone_1.apk, _2.apk...
+            # Tự đặt tên cho file Pixeldrain
             clean_name = f"Delta_Clone_ByCherry_{i+1}.apk"
             
             exists, size_str = get_file_status(clean_name)
@@ -218,7 +216,6 @@ def main():
                 "size_str": size_str
             })
 
-        # Tạo bảng Check
         check_cols = [
             {"name": "Target APK File", "justify": "left", "style": "white"},
             {"name": "Local Size", "justify": "center", "style": "cyan"},
@@ -234,7 +231,7 @@ def main():
         time.sleep(3) 
 
         # ------------------------------------------------------------------
-        # PHASE 3: DOWNLOAD MANAGER (PROGRESS PANEL)
+        # PHASE 3: DOWNLOAD MANAGER
         # ------------------------------------------------------------------
         files_to_download = [f for f in file_map if not f["exists"]]
         
@@ -261,7 +258,6 @@ def main():
                 item = task_data["item"]
                 
                 download_progress.update(tid, description="Connecting...")
-                # Pixeldrain API link là direct link luôn
                 try:
                     res = requests.get(item["url"], stream=True, timeout=30)
                     total_size = int(res.headers.get('content-length', 0))
@@ -279,7 +275,7 @@ def main():
             time.sleep(2)
 
         # ------------------------------------------------------------------
-        # PHASE 4: INSTALLATION (REALTIME UPDATE TABLE)
+        # PHASE 4: INSTALLATION
         # ------------------------------------------------------------------
         inst_states = []
         for item in file_map:
@@ -309,7 +305,7 @@ def main():
         for i, state in enumerate(inst_states):
             tmp_path = os.path.join(TERMUX_HOME, f"installer_{i}.apk")
             
-            # BƯỚC 1: COPY
+            # COPY
             inst_states[i]["stage_copy"] = "[yellow]Processing...[/yellow]"
             layout["body"].update(render_install_table())
             
@@ -324,7 +320,7 @@ def main():
             
             layout["body"].update(render_install_table())
 
-            # BƯỚC 2: INSTALL
+            # INSTALL
             inst_states[i]["stage_install"] = "[yellow]Running...[/yellow]"
             layout["body"].update(render_install_table())
             
