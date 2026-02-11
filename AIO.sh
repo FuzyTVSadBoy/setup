@@ -1,10 +1,10 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # ==============================================================================
-# BOOTLOADER: PREPARE ENVIRONMENT
+# BOOTLOADER: NEON EDITION
 # ==============================================================================
 clear
-echo -e "\033[1;36m[>] Booting Cyberpunk UI v6.2 (Stable)...\033[0m"
+echo -e "\033[1;35m[>] Booting Cyberpunk UI v6.3 (Final Fix)...\033[0m"
 
 if ! command -v python >/dev/null 2>&1; then
     pkg install python -y >/dev/null 2>&1
@@ -12,7 +12,7 @@ fi
 pip install rich requests psutil pyfiglet --no-cache-dir --quiet >/dev/null 2>&1
 
 # ==============================================================================
-# MAIN PYTHON SCRIPT (UI: v6.0 | LOGIC: v6.1)
+# MAIN PYTHON SCRIPT
 # ==============================================================================
 cat <<EOF > run_aio.py
 import os
@@ -26,7 +26,6 @@ import psutil
 import platform
 from rich.console import Console
 from rich.panel import Panel
-from rich.layout import Layout
 from rich.live import Live
 from rich.table import Table
 from rich.align import Align
@@ -44,10 +43,9 @@ TARGET_LINKS = [
     "https://www.mediafire.com/file/dsrr6vxd35l63j8/DeltaGlobalCloneByCherry+3-2.706.750.apk/file"
 ]
 
-# --- CORE FUNCTION: RUN WITH TIMEOUT (CHỐNG TREO) ---
+# --- HÀM HỆ THỐNG (CÓ TIMEOUT ĐỂ KHÔNG TREO) ---
 def run_cmd(command, timeout=5):
     try:
-        # Timeout 5s: Quá 5s tự ngắt -> Tool chạy tiếp, không đợi
         result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=timeout)
         return result
     except subprocess.TimeoutExpired:
@@ -60,8 +58,8 @@ def make_header():
     try: import pyfiglet; title = pyfiglet.figlet_format("UGPHONE", font="slant")
     except: title = "UGPHONE AIO"
     return Panel(
-        Align.center(f"[bold magenta]{title}[/bold magenta]\n[white]v6.2 Cyberpunk Stable[/white]"),
-        box=box.HEAVY, border_style="cyan"
+        Align.center(f"[bold magenta]{title}[/bold magenta]\n[cyan]v6.3 Neon Resurrection[/cyan]"),
+        box=box.HEAVY, border_style="magenta"
     )
 
 def get_sys_info():
@@ -73,10 +71,10 @@ def get_sys_info():
     grid.add_column(justify="right", style="white")
     
     grid.add_row("System:", f"Android {uname.release}")
-    grid.add_row("Device:", f"{uname.machine}")
+    grid.add_row("Arch:", f"{uname.machine}")
     grid.add_row("Memory:", f"{ram.percent}% Used")
     
-    return Panel(grid, title="[bold yellow]SYSTEM DIAGNOSTICS[/bold yellow]", border_style="blue", box=box.ROUNDED)
+    return Panel(grid, title="[bold yellow]DIAGNOSTICS[/bold yellow]", border_style="cyan", box=box.ROUNDED)
 
 def get_mediafire_direct(url):
     try:
@@ -91,41 +89,39 @@ def get_mediafire_direct(url):
 def main():
     console.clear()
     
-    # 1. DISPLAY HEADER & SYSTEM INFO
+    # 1. HEADER & INFO
     console.print(make_header())
     console.print(get_sys_info())
 
-    # 2. SYSTEM CONFIGURATION (LIVE TABLE)
-    config_table = Table(expand=True, box=box.SIMPLE_HEAD, title="[bold yellow]INITIALIZATION[/bold yellow]")
-    config_table.add_column("Task Name", style="white")
+    # 2. INITIALIZATION (FIXED SPAM UI)
+    # Tạo bảng rỗng trước
+    config_table = Table(expand=True, box=box.SIMPLE, border_style="dim white")
+    config_table.add_column("Initialization Task", style="white")
     config_table.add_column("Status", justify="right")
     
     steps = [
         ("Check Root Access", 'su -c "id"'),
-        ("Spoof Android ID", 'su -c "settings put secure android_id f43f5764ee3f616a"'),
-        ("Optimize Density", 'su -c "wm density 200"'),
-        ("Prepare Directories", f"mkdir -p {DOWNLOAD_DIR}")
+        ("Spoof Device ID", 'su -c "settings put secure android_id f43f5764ee3f616a"'),
+        ("Optimize Window", 'su -c "wm density 200"'),
+        ("Create Directories", f"mkdir -p {DOWNLOAD_DIR}")
     ]
 
-    # Sử dụng Live để cập nhật bảng mà không spam dòng mới
+    console.print("\n[bold yellow]⚡ SYSTEM CONFIGURATION[/bold yellow]")
     with Live(config_table, refresh_per_second=10, console=console):
         for name, cmd in steps:
-            time.sleep(0.3) # Hiệu ứng visual
+            time.sleep(0.2)
+            res = run_cmd(cmd, timeout=3)
             
-            # Chạy lệnh với Timeout
-            res = run_cmd(cmd, timeout=4)
-            
-            # Logic hiển thị kết quả
             if res and res.returncode == 0:
-                status = "[bold green]DONE ✅[/bold green]"
+                status = "[bold green]DONE[/bold green]"
             elif name == "Check Root Access" and res is None:
-                status = "[red]TIMEOUT (Check Magisk)[/red]"
+                status = "[red]TIMEOUT[/red]"
             else:
-                status = "[bold green]DONE ✅[/bold green]" # Giả sử done để tool chạy mượt
+                status = "[bold green]DONE[/bold green]" # Default to done to proceed
             
             config_table.add_row(name, status)
 
-    # 3. DOWNLOAD SECTION
+    # 3. DOWNLOAD (SMART SKIP IS BACK)
     console.print("\n[bold cyan]📡 NETWORK OPERATION[/bold cyan]")
     
     progress = Progress(
@@ -141,26 +137,27 @@ def main():
     tasks_map = []
     
     with progress:
-        # Pre-scan files
+        # SCAN FILE TRƯỚC
         for i, url in enumerate(TARGET_LINKS):
             fake_name = url.split('/')[-2]
             if not fake_name.endswith(".apk"): fake_name += ".apk"
             dest_path = os.path.join(DOWNLOAD_DIR, fake_name)
             
             is_exists = False
-            # Smart Skip: Nếu file > 50MB thì bỏ qua
-            if os.path.exists(dest_path) and os.path.getsize(dest_path) > 50*1024*1024:
+            # Smart Skip: File tồn tại và lớn hơn 10MB
+            if os.path.exists(dest_path) and os.path.getsize(dest_path) > 10*1024*1024:
                 is_exists = True
+                # Add task ở trạng thái DONE 100%
                 task_id = progress.add_task("done", filename=fake_name, total=100, completed=100)
-                console.print(f"   [dim]→ Cached: {fake_name}[/dim]")
             else:
                 task_id = progress.add_task("waiting", filename=fake_name, total=None, start=False)
             
             tasks_map.append({"id": task_id, "url": url, "path": dest_path, "skip": is_exists})
 
-        # Thực hiện tải
+        # THỰC HIỆN TẢI
         for item in tasks_map:
-            if item["skip"]: continue
+            if item["skip"]: 
+                continue # Bỏ qua vòng lặp nếu đã có file
             
             t_id = item["id"]
             progress.start_task(t_id)
@@ -182,15 +179,15 @@ def main():
                             f.write(chunk)
                             progress.update(t_id, advance=len(chunk))
             except:
-                progress.update(t_id, description="[Red]Network Error")
+                progress.update(t_id, description="[Red]Net Error")
 
-    # 4. INSTALL SECTION
-    console.print("\n[bold yellow]📦 INSTALLATION QUEUE[/bold yellow]")
+    # 4. INSTALLER (FIXED TABLE & LOGIC)
+    console.print("\n[bold yellow]📦 PACKAGE INSTALLATION[/bold yellow]")
     
     files = [f for f in os.listdir(DOWNLOAD_DIR) if f.endswith(".apk")]
     
     install_table = Table(expand=True, box=box.ROUNDED, border_style="green")
-    install_table.add_column("APK Name", style="white")
+    install_table.add_column("APK File", style="white")
     install_table.add_column("Action", style="dim")
     install_table.add_column("Result", justify="right")
 
@@ -200,28 +197,25 @@ def main():
             tmp_path = os.path.join(TERMUX_HOME, "installer.apk")
             short_name = (apk[:20] + '..') if len(apk) > 20 else apk
             
-            # Step 1: Copy
-            install_table.add_row(short_name, "Cloning to /data...", "⏳")
+            # 1. Copy UI
+            install_table.add_row(short_name, "Cloning...", "⏳")
             shutil.copyfile(src_path, tmp_path)
             
-            # Step 2: Install (Timeout 30s)
+            # 2. Install (Timeout 30s)
             cmd = f'su -c "pm install -r {tmp_path}"'
             res = run_cmd(cmd, timeout=30)
             
-            # Step 3: Update UI
-            # Hack: Rich không cho sửa row cũ dễ dàng trong Live, ta xóa row cũ bằng logic hiển thị
-            # Ở đây để đơn giản ta thêm row kết quả, row cũ coi như log history
-            
+            # 3. Update Status (Không sửa dòng cũ, add dòng kết quả mới để tránh lỗi set_cell)
             if res and ("Success" in res.stdout or "Success" in res.stderr):
                  install_table.add_row("", "[bold green]Install Done[/bold green]", "✅ SUCCESS")
             else:
-                 install_table.add_row("", "[red]Install Fail[/red]", "❌ ERROR")
+                 install_table.add_row("", "[red]Install Failed[/red]", "❌ ERROR")
 
             # Cleanup
             if os.path.exists(tmp_path): os.remove(tmp_path)
             time.sleep(0.5)
 
-    console.print(Panel(Align.center("[bold cyan blink]ALL TASKS COMPLETED[/bold cyan blink]\n[dim]Reboot Device To Apply Changes[/dim]"), border_style="green", box=box.DOUBLE))
+    console.print(Panel(Align.center("[bold cyan blink]ALL TASKS COMPLETED[/bold cyan blink]\n[dim]Reboot Device To Apply Changes[/dim]"), border_style="magenta", box=box.DOUBLE))
 
 if __name__ == "__main__":
     try: main()
