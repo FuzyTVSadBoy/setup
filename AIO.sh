@@ -4,7 +4,7 @@
 # BOOTLOADER: KHỞI TẠO MÔI TRƯỜNG
 # ==============================================================================
 clear
-echo -e "\033[1;36m[>] Booting Dynamic Dashboard v7.2...\033[0m"
+echo -e "\033[1;32m[>] Initializing UGPHONE MONOLITH SYSTEM v7.3...\033[0m"
 
 if ! command -v python >/dev/null 2>&1; then
     echo " -> Installing Python..."
@@ -13,7 +13,7 @@ fi
 pip install rich requests psutil pyfiglet --no-cache-dir --quiet >/dev/null 2>&1
 
 # ==============================================================================
-# MAIN PYTHON SCRIPT (v7.2 DYNAMIC LAYOUT)
+# MAIN PYTHON SCRIPT (v7.3 HEAVY EDITION)
 # ==============================================================================
 cat <<EOF > run_aio.py
 import os
@@ -26,6 +26,9 @@ import re
 import psutil
 import platform
 import socket
+from datetime import datetime
+
+# RICH UI LIBRARY
 from rich.console import Console
 from rich.panel import Panel
 from rich.layout import Layout
@@ -35,14 +38,17 @@ from rich.align import Align
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TransferSpeedColumn, TimeRemainingColumn, FileSizeColumn
 from rich import box
 from rich.style import Style
+from rich.group import Group
 
-# --- CẤU HÌNH ---
+# ==============================================================================
+# CONFIGURATION
+# ==============================================================================
 console = Console()
 DOWNLOAD_DIR = "/sdcard/Download/auto_apk_root"
 TERMUX_HOME = os.environ["HOME"] 
 TOOL_URL = "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/OldShouko.py"
 
-# LINK MEDIAFIRE
+# DANH SÁCH LINK MEDIAFIRE
 TARGET_LINKS = [
     "https://www.mediafire.com/file/x5b9678xq6ut13d/DeltaGlobalCloneByCherry+1-2.706.750.apk/file",
     "https://www.mediafire.com/file/wyz9r4nwjbssnwg/DeltaGlobalCloneByCherry+2-2.706.750.apk/file",
@@ -50,30 +56,49 @@ TARGET_LINKS = [
 ]
 
 # ==============================================================================
-# CORE LOGIC
+# SYSTEM LOGIC FUNCTIONS
 # ==============================================================================
 
-def run_cmd(command, timeout=15):
+def run_cmd(command, timeout=20):
+    """
+    Thực thi lệnh shell với timeout để tránh treo (Anti-Freeze).
+    """
     try:
         result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=timeout)
         return result
-    except: return None
+    except subprocess.TimeoutExpired:
+        return None
+    except Exception:
+        return None
 
 def get_mediafire_direct(url):
+    """
+    Lấy link tải trực tiếp từ Mediafire (Bypass Key).
+    """
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
-        res = requests.get(url, headers=headers, timeout=10)
+        res = requests.get(url, headers=headers, timeout=15)
+        # Regex tìm link trong nút Download
         match = re.search(r'href="((http|https)://download[^"]+)', res.text)
-        return match.group(1) if match else None
-    except: return None
+        if match:
+            return match.group(1)
+        return None
+    except:
+        return None
 
 def get_file_status(filename):
+    """
+    Kiểm tra file có tồn tại và dung lượng hợp lệ (>20MB) hay không.
+    """
     path = os.path.join(DOWNLOAD_DIR, filename)
     if os.path.exists(path):
-        size_mb = os.path.getsize(path) / (1024 * 1024)
+        size = os.path.getsize(path)
+        size_mb = size / (1024 * 1024)
         if size_mb > 20: 
-            return True, f"{size_mb:.1f} MB"
-    return False, "0 MB"
+            return True, f"{size_mb:.2f} MB"
+        else:
+            return False, f"{size_mb:.2f} MB (Too Small)"
+    return False, "Missing"
 
 def get_ip_address():
     try:
@@ -85,215 +110,286 @@ def get_ip_address():
     except: return "127.0.0.1"
 
 # ==============================================================================
-# UI COMPONENTS
+# UI GENERATORS (HÀM TẠO GIAO DIỆN)
 # ==============================================================================
 
 def make_header():
-    try: import pyfiglet; title = pyfiglet.figlet_format("UGPHONE", font="slant")
-    except: title = "UGPHONE AIO"
+    try: 
+        import pyfiglet
+        title = pyfiglet.figlet_format("UGPHONE", font="slant")
+    except: 
+        title = "UGPHONE AIO"
+    
     return Panel(
-        Align.center(f"[bold magenta]{title}[/bold magenta]\n[cyan]v7.2 Dynamic Dashboard[/cyan]"),
-        box=box.HEAVY, border_style="magenta"
+        Align.center(f"[bold magenta]{title}[/bold magenta]\n[cyan]v7.3 Monolith Edition (Stable UI)[/cyan]"),
+        box=box.HEAVY, border_style="magenta", padding=(0, 0)
     )
 
 def make_info_panel():
-    """Tạo bảng Info gọn gàng, 2 cột để không bị trống"""
+    """Tạo bảng Info đầy đủ, không bị trống"""
     uname = platform.uname()
     ram = psutil.virtual_memory()
     disk = psutil.disk_usage('/')
     
-    # Grid 2 cột
+    # Grid 4 cột (Label - Value | Label - Value)
     grid = Table.grid(expand=True, padding=(0, 2))
-    grid.add_column(justify="right", style="cyan")
+    grid.add_column(justify="right", style="bold cyan")
     grid.add_column(justify="left", style="white")
-    grid.add_column(justify="right", style="cyan")
+    grid.add_column(justify="right", style="bold cyan")
     grid.add_column(justify="left", style="white")
     
-    # Dòng 1
-    grid.add_row("System:", f"Android {uname.release}", "IP Addr:", get_ip_address())
-    # Dòng 2
+    grid.add_row("OS:", f"Android {uname.release}", "IP Addr:", get_ip_address())
     grid.add_row("Arch:", f"{uname.machine}", "Storage:", f"{disk.percent}% Free")
-    # Dòng 3
-    grid.add_row("Memory:", f"{ram.percent}% Used", "Root:", "Checked" if os.getuid() == 0 else "Unchecked")
+    grid.add_row("Memory:", f"{ram.percent}% Used", "Root:", "CHECKED" if os.getuid() == 0 else "UNCHECKED")
+    grid.add_row("User:", os.environ.get('USER', 'termux'), "Time:", datetime.now().strftime("%H:%M:%S"))
 
-    return Panel(grid, title="[bold yellow]SYSTEM INFO[/bold yellow]", border_style="blue", padding=(0,1))
+    return Panel(grid, title="[bold yellow]SYSTEM DIAGNOSTICS[/bold yellow]", border_style="blue")
 
-def create_table_ui(title, columns, data):
-    """Hàm tạo bảng chung cho mọi tác vụ"""
+def generate_table(title, columns, data):
+    """Hàm tạo bảng tổng quát"""
     table = Table(expand=True, box=box.ROUNDED, border_style="green", title=f"[bold yellow]{title}[/bold yellow]")
-    for col_name, style, justify in columns:
-        table.add_column(col_name, style=style, justify=justify)
     
+    for col in columns:
+        table.add_column(col["name"], justify=col["justify"], style=col["style"])
+        
     for row in data:
         table.add_row(*row)
+        
     return table
 
 # ==============================================================================
-# MAIN LOGIC
+# MAIN EXECUTION
 # ==============================================================================
 def main():
     console.clear()
     
-    # --- LAYOUT SETUP ---
-    # Header và Info cố định, Body thay đổi
+    # 1. SETUP LAYOUT
     layout = Layout()
     layout.split(
         Layout(name="header", size=8),
-        Layout(name="info", size=5), # Thu nhỏ lại cho gọn
+        Layout(name="info", size=6),
         Layout(name="body")
     )
     
+    # Set nội dung tĩnh ban đầu
     layout["header"].update(make_header())
     layout["info"].update(make_info_panel())
+    layout["body"].update(Panel(Align.center("[yellow]Initializing System...[/yellow]"), border_style="white"))
 
-    # Bắt đầu Live Render
+    # Bắt đầu Live Loop
     with Live(layout, refresh_per_second=10, screen=True):
         
-        # ---------------------------------------------------------
-        # PHASE 1: SYSTEM INIT (TABLE)
-        # ---------------------------------------------------------
-        init_steps = [
-            {"name": "Root Permission", "cmd": 'su -c "id"', "status": "Pending"},
-            {"name": "Spoof Device ID", "cmd": 'su -c "settings put secure android_id f43f5764ee3f616a"', "status": "Pending"},
-            {"name": "Set Density 200", "cmd": 'su -c "wm density 200"', "status": "Pending"},
-            {"name": "Init Storage", "cmd": f"mkdir -p {DOWNLOAD_DIR}", "status": "Pending"},
+        # ------------------------------------------------------------------
+        # PHASE 1: SYSTEM INITIALIZATION (BẢNG INIT)
+        # ------------------------------------------------------------------
+        init_tasks = [
+            {"name": "Check Root Privileges", "cmd": 'su -c "id"', "status": "Pending"},
+            {"name": "Spoof Device Identity", "cmd": 'su -c "settings put secure android_id f43f5764ee3f616a"', "status": "Pending"},
+            {"name": "Set Screen Density (200)", "cmd": 'su -c "wm density 200"', "status": "Pending"},
+            {"name": "Create Download Directory", "cmd": f"mkdir -p {DOWNLOAD_DIR}", "status": "Pending"},
+            {"name": "Fix Storage Permissions", "cmd": "termux-setup-storage", "status": "Pending"}
         ]
         
-        # Định nghĩa cột cho bảng Init
-        init_cols = [("Task Name", "white", "left"), ("Status", "right", "right")]
+        init_cols = [
+            {"name": "Initialization Task", "justify": "left", "style": "white"},
+            {"name": "Status", "justify": "right", "style": "bold"}
+        ]
 
-        for i, step in enumerate(init_steps):
-            # Render bảng hiện tại
-            rows = [[s["name"], s["status"]] for s in init_steps]
-            layout["body"].update(create_table_ui("SYSTEM INITIALIZATION", init_cols, rows))
+        # Vòng lặp thực thi Init
+        for i, task in enumerate(init_tasks):
+            # Cập nhật trạng thái "Running"
+            init_tasks[i]["status"] = "[yellow]Processing...[/yellow]"
             
-            # Chạy lệnh
-            init_steps[i]["status"] = "[yellow]Running...[/yellow]"
-            rows = [[s["name"], s["status"]] for s in init_steps]
-            layout["body"].update(create_table_ui("SYSTEM INITIALIZATION", init_cols, rows))
+            # Tạo data cho bảng
+            rows = [[t["name"], t["status"]] for t in init_tasks]
+            layout["body"].update(generate_table("SYSTEM BOOT SEQUENCE", init_cols, rows))
             
-            run_cmd(step["cmd"], timeout=3)
+            # Chạy lệnh (nếu là setup storage thì check trước để đỡ treo)
+            if "termux-setup-storage" in task["cmd"]:
+                if not os.path.exists("/data/data/com.termux/files/home/storage"):
+                     run_cmd(task["cmd"], timeout=5)
+            else:
+                run_cmd(task["cmd"], timeout=3)
             
-            # Cập nhật xong
-            init_steps[i]["status"] = "[bold green]DONE ✅[/bold green]"
+            # Cập nhật trạng thái "Done"
+            init_tasks[i]["status"] = "[green]COMPLETED ✅[/green]"
+            rows = [[t["name"], t["status"]] for t in init_tasks]
+            layout["body"].update(generate_table("SYSTEM BOOT SEQUENCE", init_cols, rows))
             time.sleep(0.2)
-        
-        time.sleep(1) # Dừng 1 xíu để người dùng thấy Done hết
 
-        # ---------------------------------------------------------
-        # PHASE 2: FILE CHECK (TABLE) - Bảng cũ tự mất do update layout
-        # ---------------------------------------------------------
+        time.sleep(1) # Pause
+
+        # ------------------------------------------------------------------
+        # PHASE 2: FILE INTEGRITY CHECK (BẢNG INVENTORY)
+        # ------------------------------------------------------------------
+        # Chuẩn bị dữ liệu file
         file_map = []
         for url in TARGET_LINKS:
             fake_name = url.split('/')[-2]
             if not fake_name.endswith(".apk"): fake_name += ".apk"
             exists, size_str = get_file_status(fake_name)
-            file_map.append({"url": url, "name": fake_name, "exists": exists, "size": size_str, "path": os.path.join(DOWNLOAD_DIR, fake_name)})
+            file_map.append({
+                "url": url,
+                "name": fake_name,
+                "path": os.path.join(DOWNLOAD_DIR, fake_name),
+                "exists": exists,
+                "size_str": size_str
+            })
 
-        # Tạo dữ liệu bảng Check
-        check_cols = [("APK File", "white", "left"), ("Size", "cyan", "center"), ("Status", "bold", "right")]
+        # Tạo bảng Check
+        check_cols = [
+            {"name": "Target APK File", "justify": "left", "style": "white"},
+            {"name": "Local Size", "justify": "center", "style": "cyan"},
+            {"name": "Integrity", "justify": "right", "style": "bold"}
+        ]
+        
         check_rows = []
         for item in file_map:
-            status = "[green]Ready[/green]" if item["exists"] else "[red]Missing[/red]"
-            check_rows.append([item["name"], item["size"], status])
+            status = "[green]READY TO INSTALL[/green]" if item["exists"] else "[red]DOWNLOAD REQUIRED[/red]"
+            check_rows.append([item["name"], item["size_str"], status])
         
-        layout["body"].update(create_table_ui("FILE INTEGRITY CHECK", check_cols, check_rows))
-        time.sleep(2) # Cho người dùng đọc kết quả check
+        layout["body"].update(generate_table("FILE INTEGRITY VERIFICATION", check_cols, check_rows))
+        time.sleep(3) # Cho người dùng đọc kỹ
 
-        # ---------------------------------------------------------
-        # PHASE 3: DOWNLOAD (TABLE + PROGRESS)
-        # ---------------------------------------------------------
-        to_download = [x for x in file_map if not x["exists"]]
+        # ------------------------------------------------------------------
+        # PHASE 3: DOWNLOAD MANAGER (PROGRESS PANEL)
+        # ------------------------------------------------------------------
+        files_to_download = [f for f in file_map if not f["exists"]]
         
-        if to_download:
-            # Tạo Progress Bar tùy chỉnh
-            progress = Progress(
-                SpinnerColumn(), 
-                TextColumn("[bold blue]{task.fields[filename]}"), 
-                BarColumn(bar_width=None, style="dim", complete_style="bold green"), 
-                "[progress.percentage]{task.percentage:>3.0f}%", 
-                TransferSpeedColumn(), 
-                expand=True
+        if files_to_download:
+            # Tạo đối tượng Progress
+            download_progress = Progress(
+                SpinnerColumn(style="bold magenta"),
+                TextColumn("[bold blue]{task.fields[filename]}"),
+                BarColumn(bar_width=None, style="dim", complete_style="bold green"),
+                "[progress.percentage]{task.percentage:>3.0f}%",
+                FileSizeColumn(),
+                TransferSpeedColumn(),
             )
             
-            # Nhúng Progress Bar vào một Panel để trông giống Table
-            dl_panel = Panel(progress, title="[bold yellow]DOWNLOADING ASSETS[/bold yellow]", border_style="cyan")
-            layout["body"].update(dl_panel) # Thay thế bảng Check bằng bảng Download
+            # Nhúng Progress vào Panel để hiển thị trong Layout
+            dl_panel = Panel(download_progress, title="[bold yellow]DOWNLOADING RESOURCES[/bold yellow]", border_style="cyan")
+            layout["body"].update(dl_panel)
             
+            # Tạo task cho Progress bar
             dl_tasks = []
-            for item in to_download:
-                tid = progress.add_task("dl", filename=item["name"], total=None)
-                dl_tasks.append((tid, item))
+            for item in files_to_download:
+                tid = download_progress.add_task("dl", filename=item["name"], total=None)
+                dl_tasks.append({"tid": tid, "item": item})
             
-            for tid, item in dl_tasks:
-                direct = get_mediafire_direct(item["url"])
-                if direct:
+            # Thực hiện tải
+            for task_data in dl_tasks:
+                tid = task_data["tid"]
+                item = task_data["item"]
+                
+                download_progress.update(tid, description="Fetching Key...")
+                direct_link = get_mediafire_direct(item["url"])
+                
+                if direct_link:
                     try:
-                        res = requests.get(direct, stream=True, timeout=20)
-                        total = int(res.headers.get('content-length', 0))
-                        progress.update(tid, total=total)
+                        res = requests.get(direct_link, stream=True, timeout=20)
+                        total_size = int(res.headers.get('content-length', 0))
+                        download_progress.update(tid, total=total_size)
+                        
                         with open(item["path"], 'wb') as f:
-                            for chunk in res.iter_content(32768):
-                                f.write(chunk)
-                                progress.update(tid, advance=len(chunk))
-                    except: progress.console.log(f"Error downloading {item['name']}")
+                            for chunk in res.iter_content(chunk_size=32768):
+                                if chunk:
+                                    f.write(chunk)
+                                    download_progress.update(tid, advance=len(chunk))
+                    except:
+                        download_progress.console.print(f"[red]Error downloading {item['name']}[/red]")
                 else:
-                    progress.console.log(f"Link expired: {item['name']}")
+                    download_progress.console.print(f"[red]Link Expired: {item['name']}[/red]")
+        else:
+            # Nếu không cần tải gì cả
+            layout["body"].update(Panel(Align.center("[bold green]ALL FILES ARE PRESENT. SKIPPING DOWNLOAD.[/bold green]"), border_style="green"))
+            time.sleep(2)
 
-        # ---------------------------------------------------------
-        # PHASE 4: INSTALL (TABLE REALTIME UPDATE)
-        # ---------------------------------------------------------
-        # Khởi tạo state
+        # ------------------------------------------------------------------
+        # PHASE 4: INSTALLATION (REALTIME UPDATE TABLE)
+        # ------------------------------------------------------------------
+        # Khởi tạo trạng thái cho bảng cài đặt
         inst_states = []
         for item in file_map:
-            inst_states.append({"name": item["name"][:25]+"..", "stage": "Waiting", "res": "..."})
-        
-        inst_cols = [("Package", "white", "left"), ("Action", "yellow", "center"), ("Result", "right", "right")]
-        
-        def render_inst_table():
-            rows = [[s["name"], s["stage"], s["res"]] for s in inst_states]
-            return create_table_ui("INSTALLATION QUEUE", inst_cols, rows)
+            inst_states.append({
+                "name": item["name"],
+                "path": item["path"],
+                "stage_copy": "Waiting",
+                "stage_install": "Waiting",
+                "result": "..."
+            })
+            
+        inst_cols = [
+            {"name": "APK Package", "justify": "left", "style": "white"},
+            {"name": "Cloning (/data)", "justify": "center", "style": "yellow"},
+            {"name": "Installing (PM)", "justify": "center", "style": "magenta"},
+            {"name": "Final Result", "justify": "right", "style": "bold"}
+        ]
 
-        layout["body"].update(render_inst_table()) # Thay thế bảng Download bằng bảng Install
+        # Hàm helper để render bảng cài đặt từ state hiện tại
+        def render_install_table():
+            rows = []
+            for s in inst_states:
+                rows.append([s["name"], s["stage_copy"], s["stage_install"], s["result"]])
+            return generate_table("PACKAGE INSTALLATION QUEUE", inst_cols, rows)
 
-        for i, item in enumerate(file_map):
-            src = item["path"]
-            tmp = os.path.join(TERMUX_HOME, "inst.apk")
+        # Update lần đầu
+        layout["body"].update(render_install_table())
+
+        # Vòng lặp cài đặt
+        for i, state in enumerate(inst_states):
+            tmp_path = os.path.join(TERMUX_HOME, f"installer_{i}.apk")
             
-            # Step 1: Clone
-            inst_states[i]["stage"] = "Cloning..."
-            layout["body"].update(render_inst_table())
-            try: shutil.copyfile(src, tmp)
-            except: pass
+            # BƯỚC 1: COPY
+            inst_states[i]["stage_copy"] = "[yellow]Processing...[/yellow]"
+            layout["body"].update(render_install_table())
             
-            # Step 2: Install
-            inst_states[i]["stage"] = "Installing..."
-            layout["body"].update(render_inst_table())
+            try:
+                shutil.copyfile(state["path"], tmp_path)
+                inst_states[i]["stage_copy"] = "[green]Done[/green]"
+            except Exception as e:
+                inst_states[i]["stage_copy"] = "[red]Error[/red]"
+                inst_states[i]["result"] = "[red]FAILED[/red]"
+                layout["body"].update(render_install_table())
+                continue
             
-            res = run_cmd(f'su -c "pm install -r {tmp}"', timeout=45)
+            layout["body"].update(render_install_table())
+
+            # BƯỚC 2: INSTALL
+            inst_states[i]["stage_install"] = "[yellow]Running...[/yellow]"
+            layout["body"].update(render_install_table())
             
-            # Step 3: Result
-            inst_states[i]["stage"] = "Finished"
-            if res and "Success" in (res.stdout + res.stderr):
-                inst_states[i]["res"] = "[bold green]SUCCESS ✅[/bold green]"
+            cmd = f'su -c "pm install -r {tmp_path}"'
+            # Timeout 45s cho việc cài đặt
+            res = run_cmd(cmd, timeout=45)
+            
+            if res and ("Success" in res.stdout or "Success" in res.stderr):
+                inst_states[i]["stage_install"] = "[green]Done[/green]"
+                inst_states[i]["result"] = "[bold green]SUCCESS ✅[/bold green]"
             else:
-                inst_states[i]["res"] = "[bold red]FAILED ❌[/bold red]"
+                inst_states[i]["stage_install"] = "[red]Failed[/red]"
+                inst_states[i]["result"] = "[bold red]ERROR ❌[/bold red]"
             
-            if os.path.exists(tmp): os.remove(tmp)
-            layout["body"].update(render_inst_table())
+            # Cleanup
+            if os.path.exists(tmp_path): os.remove(tmp_path)
+            
+            layout["body"].update(render_install_table())
             time.sleep(0.5)
 
     # --- FINAL SCREEN ---
     console.clear()
     console.print(make_header())
     console.print(make_info_panel())
-    console.print(Panel(Align.center("[bold green blink]ALL TASKS COMPLETED SUCCESSFULLY![/bold green blink]"), border_style="green"))
-    console.print(Align.center("[dim]You may restart your device now.[/dim]"))
+    console.print(Panel(Align.center("[bold green blink]ALL TASKS COMPLETED SUCCESSFULLY![/bold green blink]\n[dim]You may now reboot your device.[/dim]"), border_style="green", box=box.DOUBLE))
 
 if __name__ == "__main__":
-    try: main()
-    except KeyboardInterrupt: pass
+    try:
+        main()
+    except KeyboardInterrupt:
+        console.print("\n[red]User Aborted![/red]")
+        sys.exit(0)
 EOF
 
+# CHẠY SCRIPT
 python run_aio.py
 rm run_aio.py
