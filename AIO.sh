@@ -1,22 +1,19 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # ==============================================================================
-# BOOTLOADER: KHỞI TẠO MÔI TRƯỜNG CHUẨN
+# BOOTLOADER: KHỞI TẠO MÔI TRƯỜNG
 # ==============================================================================
 clear
-echo -e "\033[1;35m[>] Initializing UGPHONE SYSTEM v7.0...\033[0m"
+echo -e "\033[1;36m[>] Booting Dashboard UI v7.1...\033[0m"
 
-# 1. Update & Cài Python (Nếu chưa có)
 if ! command -v python >/dev/null 2>&1; then
     echo " -> Installing Python..."
     pkg install python -y >/dev/null 2>&1
 fi
-
-# 2. Cài thư viện (Requests, Rich, Psutil, Pyfiglet)
 pip install rich requests psutil pyfiglet --no-cache-dir --quiet >/dev/null 2>&1
 
 # ==============================================================================
-# MAIN PYTHON SCRIPT (FULL UI v4.0 + LOGIC v6.3)
+# MAIN PYTHON SCRIPT (v7.1 DASHBOARD EDITION)
 # ==============================================================================
 cat <<EOF > run_aio.py
 import os
@@ -41,10 +38,10 @@ from rich.style import Style
 # --- CẤU HÌNH ---
 console = Console()
 DOWNLOAD_DIR = "/sdcard/Download/auto_apk_root"
-TERMUX_HOME = os.environ["HOME"] # Thư mục home của Termux (Safe Zone)
+TERMUX_HOME = os.environ["HOME"] 
 TOOL_URL = "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/OldShouko.py"
 
-# DANH SÁCH LINK MEDIAFIRE GỐC
+# LINK MEDIAFIRE
 TARGET_LINKS = [
     "https://www.mediafire.com/file/x5b9678xq6ut13d/DeltaGlobalCloneByCherry+1-2.706.750.apk/file",
     "https://www.mediafire.com/file/wyz9r4nwjbssnwg/DeltaGlobalCloneByCherry+2-2.706.750.apk/file",
@@ -52,281 +49,240 @@ TARGET_LINKS = [
 ]
 
 # ==============================================================================
-# CORE LOGIC: HÀM HỆ THỐNG (ĐÃ NÂNG CẤP)
+# CORE LOGIC
 # ==============================================================================
 
-def run_cmd(command, timeout=10):
-    """
-    Chạy lệnh shell với cơ chế chống treo (Timeout).
-    Nếu lệnh bị treo (do hỏi quyền Root mà ko ai bấm), nó sẽ tự ngắt sau timeout.
-    """
+def run_cmd(command, timeout=15):
     try:
         result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=timeout)
         return result
-    except subprocess.TimeoutExpired:
-        return None # Trả về None nếu bị treo
-    except:
-        return None
+    except: return None
 
-def get_mediafire_direct_link(url):
-    """
-    Tự động bóc tách link tải trực tiếp từ trang Mediafire
-    """
+def get_mediafire_direct(url):
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
-        session = requests.Session()
-        response = session.get(url, headers=headers, timeout=15)
-        
-        if response.status_code != 200: return None
-        
-        # Regex tìm link trong nút Download
-        match = re.search(r'href="((http|https)://download[^"]+)', response.text)
-        if match: return match.group(1)
-        return None
-    except:
-        return None
+        res = requests.get(url, headers=headers, timeout=10)
+        match = re.search(r'href="((http|https)://download[^"]+)', res.text)
+        return match.group(1) if match else None
+    except: return None
+
+def get_file_status(filename):
+    """Kiểm tra file có tồn tại và hợp lệ không"""
+    path = os.path.join(DOWNLOAD_DIR, filename)
+    if os.path.exists(path):
+        size_mb = os.path.getsize(path) / (1024 * 1024)
+        if size_mb > 20: # File > 20MB mới coi là APK game chuẩn
+            return True, f"{size_mb:.1f} MB"
+    return False, "Missing"
 
 # ==============================================================================
-# UI COMPONENTS: GIAO DIỆN NGƯỜI DÙNG (V4.0 STYLE)
+# UI COMPONENTS
 # ==============================================================================
 
 def make_header():
     try: import pyfiglet; title = pyfiglet.figlet_format("UGPHONE", font="slant")
     except: title = "UGPHONE AIO"
     return Panel(
-        Align.center(f"[bold magenta]{title}[/bold magenta]\n[cyan]v7.0 Definitive Edition (Smart Logic)[/cyan]"),
+        Align.center(f"[bold magenta]{title}[/bold magenta]\n[cyan]v7.1 Dashboard Edition[/cyan]"),
         box=box.HEAVY, border_style="magenta"
     )
 
 def get_sys_info():
-    """Bảng thông tin hệ thống chi tiết"""
     uname = platform.uname()
     ram = psutil.virtual_memory()
-    disk = psutil.disk_usage('/')
-    
     grid = Table.grid(expand=True)
-    grid.add_column(justify="left", style="cyan")
-    grid.add_column(justify="right", style="white")
-    
-    grid.add_row("System:", f"Android {uname.release}")
-    grid.add_row("Arch:", f"{uname.machine}")
+    grid.add_column(style="cyan"); grid.add_column(justify="right", style="white")
+    grid.add_row("Device:", f"{uname.machine}")
     grid.add_row("Memory:", f"{ram.percent}% Used")
-    grid.add_row("Storage:", f"{disk.percent}% Free")
-    
-    return Panel(grid, title="[bold yellow]SYSTEM DIAGNOSTICS[/bold yellow]", border_style="blue")
+    return Panel(grid, title="[bold yellow]INFO[/bold yellow]", border_style="blue")
 
-def create_job_table(jobs):
-    """Tạo bảng trạng thái công việc (Task Manager)"""
-    table = Table(expand=True, box=box.SIMPLE_HEAD, border_style="dim white")
-    table.add_column("ID", justify="center", style="cyan", width=4)
-    table.add_column("Task Description", style="white")
-    table.add_column("Status", justify="right")
+def build_inventory_table(file_map):
+    """Tạo bảng kiểm kê file"""
+    table = Table(expand=True, box=box.SIMPLE_HEAD, title="[bold yellow]FILE INTEGRITY CHECK[/bold yellow]")
+    table.add_column("APK Name", style="white")
+    table.add_column("Local Status", justify="center")
+    table.add_column("Action", justify="right")
     
-    for job in jobs:
-        status_style = "dim"
-        status_icon = "..."
-        if job["status"] == "running":
-            status_style = "bold yellow"
-            status_icon = "PROCESSING 🔄"
-        elif job["status"] == "done":
-            status_style = "bold green"
-            status_icon = "SUCCESS ✅"
-        elif job["status"] == "error":
-            status_style = "bold red"
-            status_icon = "FAILED ❌"
-        elif job["status"] == "timeout":
-             status_style = "bold red"
-             status_icon = "TIMEOUT ⚠"
-             
-        table.add_row(str(job["id"]), job["name"], f"[{status_style}]{status_icon}[/{status_style}]")
+    for item in file_map:
+        if item['exists']:
+            status = f"[green]FOUND ({item['size']})[/green]"
+            action = "[dim]Install Only[/dim]"
+        else:
+            status = "[red]MISSING[/red]"
+            action = "[bold cyan]Download Required[/bold cyan]"
+        table.add_row(item['name'], status, action)
+    return table
+
+def build_install_table(install_states):
+    """Tạo bảng cài đặt cập nhật realtime"""
+    table = Table(expand=True, box=box.ROUNDED, border_style="green", title="[bold yellow]INSTALLATION PROCESS[/bold yellow]")
+    table.add_column("Package Name", style="white")
+    table.add_column("Stage 1: Cloning", justify="center")
+    table.add_column("Stage 2: Installing", justify="center")
+    table.add_column("Result", justify="right")
     
-    return Panel(table, title="[bold yellow]BOOT SEQUENCE[/bold yellow]", border_style="yellow")
+    for state in install_states:
+        # Stage 1 UI
+        if state['stage'] == 0: s1 = "[dim]-[/dim]"
+        elif state['stage'] == 1: s1 = "[yellow]Copying..[/yellow]"
+        else: s1 = "[green]Done[/green]"
+        
+        # Stage 2 UI
+        if state['stage'] < 2: s2 = "[dim]-[/dim]"
+        elif state['stage'] == 2: s2 = "[yellow]Running..[/yellow]"
+        else: s2 = "[green]Done[/green]"
+        
+        # Result UI
+        if state['result'] == "pending": res = "⏳"
+        elif state['result'] == "success": res = "[bold green]SUCCESS ✅[/bold green]"
+        else: res = "[bold red]FAILED ❌[/bold red]"
+        
+        table.add_row(state['name'], s1, s2, res)
+    return table
 
 # ==============================================================================
-# MAIN EXECUTION FLOW
+# MAIN LOGIC
 # ==============================================================================
 def main():
-    # --- PHASE 1: BOOT SEQUENCE (LAYOUT UI) ---
-    jobs = [
-        {"id": 1, "name": "Reset Storage Configuration", "status": "pending"},
-        {"id": 2, "name": "Download Core Tool (OldShouko)", "status": "pending"},
-        {"id": 3, "name": "Device Identity Spoofing", "status": "pending"},
-        {"id": 4, "name": "Initialize Directory Structure", "status": "pending"},
-    ]
-
+    console.clear()
+    
+    # --- LAYOUT SETUP ---
     layout = Layout()
     layout.split(
         Layout(name="header", size=8),
-        Layout(name="body"),
-        Layout(name="footer", size=8) # Tăng size footer để hiện info đẹp hơn
+        Layout(name="info", size=5),
+        Layout(name="body")
     )
-    
     layout["header"].update(make_header())
-    layout["footer"].update(get_sys_info())
-
-    with Live(layout, refresh_per_second=10, screen=True):
-        
-        # JOB 1: Storage
-        jobs[0]["status"] = "running"; layout["body"].update(create_job_table(jobs))
-        home_storage = "/data/data/com.termux/files/home/storage"
-        if os.path.exists(home_storage): shutil.rmtree(home_storage, ignore_errors=True)
-        # Bỏ qua lệnh setup storage nếu đã có quyền để tránh treo
-        if not os.path.exists(home_storage): 
-             run_cmd("termux-setup-storage", timeout=5)
-        time.sleep(1)
-        jobs[0]["status"] = "done"; layout["body"].update(create_job_table(jobs))
-
-        # JOB 2: Download Tool
-        jobs[1]["status"] = "running"; layout["body"].update(create_job_table(jobs))
-        dest = "/sdcard/Download/OldShouko.py"
-        try:
-            r = requests.get(TOOL_URL, timeout=10)
-            if r.status_code == 200:
-                with open(dest, 'wb') as f: f.write(r.content)
-                jobs[1]["status"] = "done"
-            else: jobs[1]["status"] = "error"
-        except: jobs[1]["status"] = "error"
-        layout["body"].update(create_job_table(jobs))
-
-        # JOB 3: Device Config (Root)
-        jobs[2]["status"] = "running"; layout["body"].update(create_job_table(jobs))
-        
-        # Check root first
-        res = run_cmd('su -c "id"', timeout=5)
-        if res is None:
-             jobs[2]["status"] = "timeout" # Báo lỗi nếu ko cấp quyền
-        else:
-             run_cmd('su -c "settings put secure android_id f43f5764ee3f616a"', timeout=3)
-             run_cmd('su -c "wm density 200"', timeout=3)
-             jobs[2]["status"] = "done"
-             
-        layout["body"].update(create_job_table(jobs))
-
-        # JOB 4: Directory
-        jobs[3]["status"] = "running"; layout["body"].update(create_job_table(jobs))
-        if os.path.exists(DOWNLOAD_DIR): shutil.rmtree(DOWNLOAD_DIR)
-        os.makedirs(DOWNLOAD_DIR)
-        time.sleep(0.5)
-        jobs[3]["status"] = "done"; layout["body"].update(create_job_table(jobs))
-        
-        time.sleep(1) # Pause để người dùng nhìn thấy kết quả đẹp
-
-    # --- PHASE 2: DOWNLOADER (SMART SKIP LOGIC) ---
-    console.clear()
-    console.print(make_header())
-    console.print(Panel("[bold cyan]ESTABLISHING SECURE CONNECTION TO MEDIAFIRE...[/bold cyan]", border_style="cyan"))
-
-    progress = Progress(
-        SpinnerColumn(style="bold magenta"),
-        TextColumn("[bold blue]{task.fields[filename]}", justify="left"),
-        BarColumn(bar_width=None, style="dim", complete_style="bold green"),
-        "[progress.percentage]{task.percentage:>3.0f}%",
-        FileSizeColumn(),
-        TransferSpeedColumn(),
-        console=console
-    )
-
-    tasks_map = []
+    layout["info"].update(get_sys_info())
     
-    with progress:
-        # BƯỚC 1: QUÉT FILE VÀ TẠO TASK
-        for i, url in enumerate(TARGET_LINKS):
-            # Giả lập tên file từ URL trước khi tải
-            fake_name = url.split('/')[-2]
-            if not fake_name.endswith(".apk"): fake_name += ".apk"
-            
-            dest_path = os.path.join(DOWNLOAD_DIR, fake_name)
-            is_exists = False
-            
-            # Smart Skip: Nếu file tồn tại và > 50MB
-            if os.path.exists(dest_path) and os.path.getsize(dest_path) > 50 * 1024 * 1024:
-                is_exists = True
-                task_id = progress.add_task("done", filename=fake_name, total=100, completed=100)
-                console.print(f"   [dim]→ Found Cached File: {fake_name}[/dim]")
-            else:
-                task_id = progress.add_task("waiting", filename=fake_name, total=None, start=False)
-            
-            tasks_map.append({"id": task_id, "url": url, "path": dest_path, "skip": is_exists})
+    console.print(layout["header"])
+    console.print(layout["info"])
 
-        # BƯỚC 2: THỰC HIỆN TẢI
-        for item in tasks_map:
-            if item["skip"]: continue # Bỏ qua nếu đã có
+    # --- PHASE 1: CONFIGURATION ---
+    with console.status("[bold yellow]Configuring System (Root/Storage)...[/bold yellow]", spinner="dots"):
+        if not os.path.exists(DOWNLOAD_DIR): os.makedirs(DOWNLOAD_DIR)
+        run_cmd('su -c "settings put secure android_id f43f5764ee3f616a"', 3)
+        run_cmd('su -c "wm density 200"', 3)
+        # Fix storage permission silently
+        if not os.path.exists("/data/data/com.termux/files/home/storage"):
+            run_cmd("termux-setup-storage", 5)
+
+    # --- PHASE 2: INVENTORY CHECK (SMART DETECT) ---
+    file_map = []
+    # Pre-scan links to get filenames
+    for url in TARGET_LINKS:
+        fake_name = url.split('/')[-2]
+        if not fake_name.endswith(".apk"): fake_name += ".apk"
+        exists, size_str = get_file_status(fake_name)
+        file_map.append({
+            "url": url, 
+            "name": fake_name, 
+            "exists": exists, 
+            "size": size_str,
+            "path": os.path.join(DOWNLOAD_DIR, fake_name)
+        })
+    
+    console.print(build_inventory_table(file_map))
+    time.sleep(2) # Cho người dùng đọc bảng
+
+    # --- PHASE 3: DOWNLOAD MANAGER ---
+    # Chỉ tải những file Missing
+    download_needed = [f for f in file_map if not f['exists']]
+    
+    if download_needed:
+        console.print("\n[bold cyan]📡 STARTING DOWNLOADS[/bold cyan]")
+        progress = Progress(
+            SpinnerColumn(), TextColumn("[bold blue]{task.fields[filename]}"), 
+            BarColumn(bar_width=None, style="dim", complete_style="bold green"), 
+            "[progress.percentage]{task.percentage:>3.0f}%", 
+            FileSizeColumn(), TransferSpeedColumn(), console=console
+        )
+        
+        with progress:
+            tasks = []
+            # Create tasks
+            for item in download_needed:
+                tid = progress.add_task("dl", filename=item['name'], total=None)
+                tasks.append((tid, item))
             
-            t_id = item["id"]
-            progress.start_task(t_id)
-            progress.update(t_id, description="Generating Key...")
+            # Execute tasks
+            for tid, item in tasks:
+                progress.update(tid, description="Getting Key...")
+                direct = get_mediafire_direct(item['url'])
+                
+                if direct:
+                    try:
+                        res = requests.get(direct, stream=True, timeout=20)
+                        size = int(res.headers.get('content-length', 0))
+                        progress.update(tid, total=size)
+                        with open(item['path'], 'wb') as f:
+                            for chunk in res.iter_content(32768):
+                                f.write(chunk)
+                                progress.update(tid, advance=len(chunk))
+                    except:
+                        progress.update(tid, description="[red]Error[/red]")
+                else:
+                    progress.update(tid, description="[red]Link Die[/red]")
+    else:
+        console.print("\n[green]✓ All files are present. Skipping download.[/green]")
+
+    # --- PHASE 4: INSTALLATION DASHBOARD (TABLE UI) ---
+    console.print("\n")
+    
+    # Khởi tạo trạng thái cài đặt
+    install_states = []
+    for item in file_map:
+        install_states.append({
+            "name": (item['name'][:20] + '..'),
+            "full_path": item['path'],
+            "stage": 0, # 0: Pending, 1: Copying, 2: Installing, 3: Done
+            "result": "pending"
+        })
+
+    # Chạy vòng lặp cài đặt với Live Table
+    with Live(build_install_table(install_states), refresh_per_second=4, console=console) as live:
+        
+        for i, state in enumerate(install_states):
+            tmp_path = os.path.join(TERMUX_HOME, f"install_{i}.apk")
             
-            direct = get_mediafire_direct_link(item["url"])
-            if not direct:
-                 progress.update(t_id, description="[Red]Link Expired/Error")
-                 continue
+            # STAGE 1: COPY
+            install_states[i]['stage'] = 1
+            live.update(build_install_table(install_states))
             
             try:
-                res = requests.get(direct, stream=True, timeout=20, headers={'User-Agent': 'Mozilla/5.0'})
-                size = int(res.headers.get('content-length', 0))
-                progress.update(t_id, total=size)
-                
-                with open(item["path"], 'wb') as f:
-                    for chunk in res.iter_content(chunk_size=32768):
-                        if chunk:
-                            f.write(chunk)
-                            progress.update(t_id, advance=len(chunk))
-            except Exception as e:
-                progress.update(t_id, description="[Red]Network Failed")
+                shutil.copyfile(state['full_path'], tmp_path)
+            except:
+                install_states[i]['result'] = "error"
+                live.update(build_install_table(install_states))
+                continue
 
-    # --- PHASE 3: INSTALLER (REAL INSTALL LOGIC) ---
-    console.clear()
-    console.print(make_header())
-    console.print(Panel("[bold yellow]INITIALIZING PACKAGE INSTALLATION (ROOT)[/bold yellow]", border_style="yellow"))
-    
-    files = [f for f in os.listdir(DOWNLOAD_DIR) if f.endswith(".apk")]
-    
-    # Bảng cài đặt đẹp
-    install_table = Table(expand=True, box=box.ROUNDED, border_style="green")
-    install_table.add_column("APK Package", style="white")
-    install_table.add_column("Current Action", style="dim")
-    install_table.add_column("Result", justify="right")
-
-    with Live(install_table, refresh_per_second=4, console=console):
-        for apk in files:
-            src_path = os.path.join(DOWNLOAD_DIR, apk)
-            # Copy file vào vùng an toàn của Termux để cài (FIX LỖI CÀI ẢO)
-            tmp_path = os.path.join(TERMUX_HOME, "temp_installer.apk")
+            # STAGE 2: INSTALL
+            install_states[i]['stage'] = 2
+            live.update(build_install_table(install_states))
             
-            short_name = (apk[:25] + '..') if len(apk) > 25 else apk
-            
-            # BƯỚC 1: COPY
-            install_table.add_row(short_name, "Cloning to /data/...", "⏳")
-            shutil.copyfile(src_path, tmp_path)
-            
-            # BƯỚC 2: INSTALL (Timeout 30s)
             cmd = f'su -c "pm install -r {tmp_path}"'
-            res = run_cmd(cmd, timeout=30)
+            res = run_cmd(cmd, timeout=45) # Tăng timeout cài đặt lên 45s
             
-            # BƯỚC 3: CHECK KẾT QUẢ & UPDATE UI
-            # Hack UI: Thêm dòng kết quả mới
+            # RESULT
+            install_states[i]['stage'] = 3
             if res and ("Success" in res.stdout or "Success" in res.stderr):
-                 install_table.add_row("", "[bold green]Installation Finished[/bold green]", "✅ SUCCESS")
+                install_states[i]['result'] = "success"
             else:
-                 install_table.add_row("", "[red]Installation Failed[/red]", "❌ ERROR")
-
-            # Cleanup file tạm
+                install_states[i]['result'] = "error"
+            
+            # Cleanup
             if os.path.exists(tmp_path): os.remove(tmp_path)
+            
+            live.update(build_install_table(install_states))
             time.sleep(0.5)
 
-    # --- FINAL SCREEN ---
-    console.print("\n")
-    console.print(Panel(
-        Align.center("[bold cyan blink]ALL OPERATIONS COMPLETED SUCCESSFULLY[/bold cyan blink]\n[dim]It is recommended to Reboot your device now.[/dim]"), 
-        border_style="magenta", 
-        box=box.DOUBLE
-    ))
+    console.print(Panel("[bold green blink]ALL TASKS COMPLETED! REBOOT NOW.[/bold green blink]", border_style="green"))
 
 if __name__ == "__main__":
     try: main()
     except KeyboardInterrupt: pass
 EOF
 
-# CHẠY SCRIPT
 python run_aio.py
 rm run_aio.py
