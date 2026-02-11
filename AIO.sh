@@ -10,7 +10,7 @@ echo -e "\033[1;36m[>] Initializing UGPHONE v8.2 (Static Install)...\033[0m"
 if ! command -v python >/dev/null 2>&1; then
     pkg install python -y >/dev/null 2>&1
 fi
-pip install rich requests psutil --no-cache-dir --quiet >/dev/null 2>&1
+pip install rich requests psutil prettytable pytz --no-cache-dir --quiet >/dev/null 2>&1
 
 # ==============================================================================
 # MAIN PYTHON SCRIPT (v8.2 MANUAL REFRESH)
