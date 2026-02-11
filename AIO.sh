@@ -51,9 +51,9 @@ TOOL_URL = "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main
 
 # DANH SÁCH LINK MEDIAFIRE
 TARGET_LINKS = [
-    "https://www.mediafire.com/file/x5b9678xq6ut13d/DeltaGlobalCloneByCherry+1-2.706.750.apk/file",
-    "https://www.mediafire.com/file/wyz9r4nwjbssnwg/DeltaGlobalCloneByCherry+2-2.706.750.apk/file",
-    "https://www.mediafire.com/file/dsrr6vxd35l63j8/DeltaGlobalCloneByCherry+3-2.706.750.apk/file"
+    "https://pixeldrain.com/api/file/qTMZ8NVA?download",
+    "https://pixeldrain.com/api/file/bcccMBDy?download",
+    "https://pixeldrain.com/api/file/eohaWnEh?download"
 ]
 
 # ==============================================================================
