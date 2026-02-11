@@ -1,7 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # ==============================================================================
-# BOOTLOADER: CHUẨN BỊ MÔI TRƯỜNG (GIỮ NGUYÊN ĐỂ ỔN ĐỊNH)
+# BOOTLOADER: CHUẨN BỊ MÔI TRƯỜNG
 # ==============================================================================
 clear
 echo -e "\033[1;36m[>] Initializing Cyberpunk UI Environment...\033[0m"
@@ -11,11 +11,11 @@ if ! command -v python >/dev/null 2>&1; then
     pkg install python -y >/dev/null 2>&1
 fi
 
-# 2. Cài thư viện (Thêm pyfiglet để tạo chữ to đẹp)
+# 2. Cài thư viện
 pip install rich requests psutil pyfiglet --no-cache-dir --quiet >/dev/null 2>&1
 
 # ==============================================================================
-# MAIN PYTHON SCRIPT (CYBERPUNK EDITION)
+# MAIN PYTHON SCRIPT (CYBERPUNK EDITION - PERMISSION FIX)
 # ==============================================================================
 cat <<EOF > run_aio.py
 import os
@@ -73,7 +73,7 @@ def make_header():
         title = "UGPHONE AIO"
     
     return Panel(
-        Align.center(f"[bold magenta]{title}[/bold magenta]\n[white]Ultimate Setup Tool v3.0[/white]"),
+        Align.center(f"[bold magenta]{title}[/bold magenta]\n[white]Ultimate Setup Tool v3.1 (Fix)[/white]"),
         box=box.ROUNDED,
         border_style="cyan"
     )
@@ -144,7 +144,7 @@ def main():
         # --- JOB 2: LIBS ---
         jobs[1]["status"] = "running"
         layout["body"].update(create_job_table(jobs))
-        time.sleep(0.5) # Fake tí cho người dùng kịp nhìn
+        time.sleep(0.5) 
         jobs[1]["status"] = "done"
         layout["body"].update(create_job_table(jobs))
 
@@ -181,7 +181,6 @@ def main():
         layout["body"].update(create_job_table(jobs))
 
     # --- CHUYỂN CẢNH: DOWNLOADER INTERFACE ---
-    # Vì Download cần Progress Bar phức tạp, ta thoát Live cũ và tạo Live mới
     console.clear()
     console.print(make_header())
     
@@ -191,7 +190,6 @@ def main():
         shutil.rmtree(DOWNLOAD_DIR)
     os.makedirs(DOWNLOAD_DIR)
 
-    # Cấu hình Progress Bar màu mè hoa lá cành
     progress = Progress(
         SpinnerColumn(spinner_name="dots12", style="bold magenta"),
         TextColumn("[bold cyan]{task.fields[filename]}", justify="left"),
@@ -237,20 +235,23 @@ def main():
     install_table.add_column("Progress", style="dim")
     install_table.add_column("Result", justify="right")
 
-    # Dùng Live để update bảng cài đặt
     with Live(install_table, refresh_per_second=4, console=console):
         for apk in files:
             short_name = (apk[:25] + '..') if len(apk) > 25 else apk
             full_path = os.path.join(DOWNLOAD_DIR, apk)
-            os.chmod(full_path, 0o644)
             
-            # Giả lập dòng đang cài
+            # --- FIX: Bọc chmod trong try-except để tránh lỗi PermissionError ---
+            try:
+                os.chmod(full_path, 0o644)
+            except Exception:
+                pass # Bỏ qua nếu không set được quyền (sdcard)
+            # -----------------------------------------------------------------
+            
             install_table.add_row(short_name, "Installing...", "⏳")
             
             cmd = f'su -c "pm install -r \\"{full_path}\\""'
             if run_cmd(cmd):
-                # Update dòng cuối cùng thành Success
-                install_table.rows[-1].set_cell(1, "[bold green]Done[/bold green]") # Xóa chữ installing
+                install_table.rows[-1].set_cell(1, "[bold green]Done[/bold green]")
                 install_table.rows[-1].set_cell(2, "[bold green]SUCCESS[/bold green]")
             else:
                 install_table.rows[-1].set_cell(1, "[red]Error[/red]")
@@ -261,7 +262,6 @@ def main():
             
             time.sleep(0.5)
 
-    # --- KẾT THÚC ---
     console.print(Panel(
         Align.center("[bold yellow blink]⚠ SYSTEM REBOOT REQUIRED ⚠[/bold yellow blink]\n[dim]Device ID has been changed[/dim]"),
         border_style="red",
