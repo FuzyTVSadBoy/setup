@@ -1,19 +1,21 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # ==============================================================================
-# BOOTLOADER: KHỞI TẠO MÔI TRƯỜNG
+# BOOTLOADER: KHỞI TẠO & SỬA LỖI TERMINAL
 # ==============================================================================
+# Reset terminal ngay lập tức để fix lỗi mất chữ nếu lần trước bị crash
+stty sane 
 clear
-echo -e "\033[1;32m[>] Initializing UGPHONE PIXELDRAIN SYSTEM v7.4 (Fixed)...\033[0m"
+echo -e "\033[1;32m[>] Initializing UGPHONE SYSTEM v7.5 (Repair)...\033[0m"
 
 if ! command -v python >/dev/null 2>&1; then
     echo " -> Installing Python..."
     pkg install python -y >/dev/null 2>&1
 fi
-pip install rich requests psutil pyfiglet --no-cache-dir --quiet >/dev/null 2>&1
+pip install rich requests psutil --no-cache-dir --quiet >/dev/null 2>&1
 
 # ==============================================================================
-# MAIN PYTHON SCRIPT (v7.4 FIXED RICH IMPORT)
+# MAIN PYTHON SCRIPT (v7.5 FIXED)
 # ==============================================================================
 cat <<EOF > run_aio.py
 import os
@@ -22,36 +24,29 @@ import time
 import subprocess
 import shutil
 import requests
-import re
 import psutil
 import platform
 import socket
 from datetime import datetime
 
-# RICH UI LIBRARY
-from rich.console import Console
+# RICH UI IMPORTS
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.layout import Layout
 from rich.live import Live
 from rich.table import Table
 from rich.align import Align
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TransferSpeedColumn, TimeRemainingColumn, FileSizeColumn
+from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TransferSpeedColumn, FileSizeColumn
 from rich import box
 from rich.style import Style
 
-# --- [FIX] SỬA LỖI IMPORT TẠI ĐÂY ---
-# Thay vì 'from rich.group import Group' (đã bị xóa), ta dùng:
-from rich.console import Group 
-
-# ==============================================================================
-# CONFIGURATION
-# ==============================================================================
+# --- CẤU HÌNH ---
 console = Console()
 DOWNLOAD_DIR = "/sdcard/Download/auto_apk_root"
-TERMUX_HOME = os.environ["HOME"] 
+TOOL_PATH = "/sdcard/Download/OldShouko.py"
 TOOL_URL = "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/OldShouko.py"
 
-# DANH SÁCH LINK PIXELDRAIN
+# LINKS PIXELDRAIN
 TARGET_LINKS = [
     "https://pixeldrain.com/api/file/qTMZ8NVA?download",
     "https://pixeldrain.com/api/file/bcccMBDy?download",
@@ -59,300 +54,206 @@ TARGET_LINKS = [
 ]
 
 # ==============================================================================
-# SYSTEM LOGIC FUNCTIONS
+# SYSTEM FUNCTIONS
 # ==============================================================================
 
 def run_cmd(command, timeout=20):
-    """
-    Thực thi lệnh shell với timeout để tránh treo.
-    """
     try:
         result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=timeout)
         return result
-    except subprocess.TimeoutExpired:
-        return None
-    except Exception:
-        return None
+    except: return None
 
 def get_file_status(filename):
-    """
-    Kiểm tra file có tồn tại và dung lượng hợp lệ (>20MB) hay không.
-    """
     path = os.path.join(DOWNLOAD_DIR, filename)
     if os.path.exists(path):
-        size = os.path.getsize(path)
-        size_mb = size / (1024 * 1024)
+        size_mb = os.path.getsize(path) / (1024 * 1024)
         if size_mb > 20: 
             return True, f"{size_mb:.2f} MB"
-        else:
-            return False, f"{size_mb:.2f} MB (Too Small)"
+        return False, f"{size_mb:.2f} MB (Error)"
     return False, "Missing"
 
-def get_ip_address():
+def download_file(url, path):
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except: return "127.0.0.1"
+        r = requests.get(url, timeout=15)
+        with open(path, 'wb') as f:
+            f.write(r.content)
+        return True
+    except: return False
 
 # ==============================================================================
-# UI GENERATORS (HÀM TẠO GIAO DIỆN)
+# UI HELPERS (SIMPLE & CLEAN - NO BREAKING)
 # ==============================================================================
 
 def make_header():
-    try: 
-        import pyfiglet
-        title = pyfiglet.figlet_format("UGPHONE", font="slant")
-    except: 
-        title = "UGPHONE AIO"
-    
-    return Panel(
-        Align.center(f"[bold magenta]{title}[/bold magenta]\n[cyan]v7.4 Pixeldrain Edition (Fixed)[/cyan]"),
-        box=box.HEAVY, border_style="magenta", padding=(0, 0)
-    )
+    # Dùng text thường thay vì Pyfiglet để tránh vỡ giao diện trên điện thoại
+    grid = Table.grid(expand=True)
+    grid.add_column(justify="center", ratio=1)
+    grid.add_row("[bold magenta]UGPHONE AIO ULTIMATE[/bold magenta]")
+    grid.add_row("[cyan]v7.5 Repair Edition (Pixeldrain)[/cyan]")
+    return Panel(grid, style="magenta", box=box.HEAVY)
 
-def make_info_panel():
-    """Tạo bảng Info đầy đủ"""
+def make_info():
     uname = platform.uname()
     ram = psutil.virtual_memory()
-    disk = psutil.disk_usage('/')
     
-    grid = Table.grid(expand=True, padding=(0, 2))
-    grid.add_column(justify="right", style="bold cyan")
-    grid.add_column(justify="left", style="white")
-    grid.add_column(justify="right", style="bold cyan")
-    grid.add_column(justify="left", style="white")
+    # Bảng Info nhỏ gọn 2 dòng
+    text = f"[bold]OS:[/bold] Android {uname.release} | [bold]Arch:[/bold] {uname.machine}\n"
+    text += f"[bold]RAM:[/bold] {ram.percent}% Used | [bold]Root:[/bold] {'YES' if os.getuid()==0 else 'NO'}"
     
-    grid.add_row("OS:", f"Android {uname.release}", "IP Addr:", get_ip_address())
-    grid.add_row("Arch:", f"{uname.machine}", "Storage:", f"{disk.percent}% Free")
-    grid.add_row("Memory:", f"{ram.percent}% Used", "Root:", "CHECKED" if os.getuid() == 0 else "UNCHECKED")
-    grid.add_row("User:", os.environ.get('USER', 'termux'), "Time:", datetime.now().strftime("%H:%M:%S"))
+    return Panel(Align.center(text), title="[yellow]SYSTEM INFO[/yellow]", border_style="blue", padding=(0,1))
 
-    return Panel(grid, title="[bold yellow]SYSTEM DIAGNOSTICS[/bold yellow]", border_style="blue")
-
-def generate_table(title, columns, data):
-    """Hàm tạo bảng tổng quát"""
-    table = Table(expand=True, box=box.ROUNDED, border_style="green", title=f"[bold yellow]{title}[/bold yellow]")
-    
-    for col in columns:
-        table.add_column(col["name"], justify=col["justify"], style=col["style"])
-        
-    for row in data:
-        table.add_row(*row)
-        
+def create_table(title, headers, rows):
+    table = Table(title=f"[bold yellow]{title}[/bold yellow]", expand=True, box=box.ROUNDED, border_style="green")
+    for h in headers: table.add_column(h)
+    for r in rows: table.add_row(*r)
     return table
 
 # ==============================================================================
-# MAIN EXECUTION
+# MAIN LOGIC
 # ==============================================================================
 def main():
     console.clear()
     
-    # 1. SETUP LAYOUT
+    # SETUP LAYOUT
     layout = Layout()
     layout.split(
-        Layout(name="header", size=8),
-        Layout(name="info", size=6),
+        Layout(name="header", size=5),
+        Layout(name="info", size=4),
         Layout(name="body")
     )
     
     layout["header"].update(make_header())
-    layout["info"].update(make_info_panel())
-    layout["body"].update(Panel(Align.center("[yellow]Initializing System...[/yellow]"), border_style="white"))
+    layout["info"].update(make_info())
+    layout["body"].update(Panel(Align.center("Initializing...")))
 
     with Live(layout, refresh_per_second=10, screen=True):
         
-        # ------------------------------------------------------------------
-        # PHASE 1: SYSTEM INITIALIZATION
-        # ------------------------------------------------------------------
-        init_tasks = [
-            {"name": "Check Root Privileges", "cmd": 'su -c "id"', "status": "Pending"},
-            {"name": "Spoof Device Identity", "cmd": 'su -c "settings put secure android_id f43f5764ee3f616a"', "status": "Pending"},
-            {"name": "Set Screen Density (200)", "cmd": 'su -c "wm density 200"', "status": "Pending"},
-            {"name": "Create Download Directory", "cmd": f"mkdir -p {DOWNLOAD_DIR}", "status": "Pending"},
-            {"name": "Fix Storage Permissions", "cmd": "termux-setup-storage", "status": "Pending"}
+        # --- PHASE 1: SYSTEM PREP (Added Tool Download) ---
+        tasks = [
+            {"name": "Check Root", "cmd": 'su -c "id"', "status": "Pending"},
+            {"name": "Spoof ID", "cmd": 'su -c "settings put secure android_id f43f5764ee3f616a"', "status": "Pending"},
+            {"name": "Set Density", "cmd": 'su -c "wm density 200"', "status": "Pending"},
+            {"name": "Create Dir", "cmd": f"mkdir -p {DOWNLOAD_DIR}", "status": "Pending"},
+            {"name": "Download OldShouko.py", "action": "dl_tool", "status": "Pending"} # Đã thêm lại
         ]
         
-        init_cols = [
-            {"name": "Initialization Task", "justify": "left", "style": "white"},
-            {"name": "Status", "justify": "right", "style": "bold"}
-        ]
-
-        for i, task in enumerate(init_tasks):
-            init_tasks[i]["status"] = "[yellow]Processing...[/yellow]"
+        for i, task in enumerate(tasks):
+            tasks[i]["status"] = "[yellow]Running...[/yellow]"
+            # Render Table
+            rows = [[t["name"], t["status"]] for t in tasks]
+            layout["body"].update(create_table("SYSTEM INITIALIZATION", ["Task", "Status"], rows))
             
-            rows = [[t["name"], t["status"]] for t in init_tasks]
-            layout["body"].update(generate_table("SYSTEM BOOT SEQUENCE", init_cols, rows))
-            
-            if "termux-setup-storage" in task["cmd"]:
-                if not os.path.exists("/data/data/com.termux/files/home/storage"):
-                     run_cmd(task["cmd"], timeout=5)
+            # Logic
+            if task.get("action") == "dl_tool":
+                if download_file(TOOL_URL, TOOL_PATH):
+                    tasks[i]["status"] = "[green]Saved ✅[/green]"
+                else:
+                    tasks[i]["status"] = "[red]Failed ❌[/red]"
             else:
-                run_cmd(task["cmd"], timeout=3)
+                run_cmd(task["cmd"], timeout=5)
+                tasks[i]["status"] = "[green]Done ✅[/green]"
             
-            init_tasks[i]["status"] = "[green]COMPLETED ✅[/green]"
-            rows = [[t["name"], t["status"]] for t in init_tasks]
-            layout["body"].update(generate_table("SYSTEM BOOT SEQUENCE", init_cols, rows))
             time.sleep(0.2)
-
+        
         time.sleep(1)
 
-        # ------------------------------------------------------------------
-        # PHASE 2: FILE INTEGRITY CHECK
-        # ------------------------------------------------------------------
+        # --- PHASE 2: FILE CHECK & DOWNLOAD ---
         file_map = []
-        for i, url in enumerate(TARGET_LINKS):
-            # Tự đặt tên cho file Pixeldrain
-            clean_name = f"Delta_Clone_ByCherry_{i+1}.apk"
-            
-            exists, size_str = get_file_status(clean_name)
-            file_map.append({
-                "url": url,
-                "name": clean_name,
-                "path": os.path.join(DOWNLOAD_DIR, clean_name),
-                "exists": exists,
-                "size_str": size_str
-            })
+        for idx, url in enumerate(TARGET_LINKS):
+            fname = f"Delta_Clone_ByCherry_{idx+1}.apk"
+            exists, size = get_file_status(fname)
+            file_map.append({"url": url, "name": fname, "path": os.path.join(DOWNLOAD_DIR, fname), "exists": exists, "size": size})
 
-        check_cols = [
-            {"name": "Target APK File", "justify": "left", "style": "white"},
-            {"name": "Local Size", "justify": "center", "style": "cyan"},
-            {"name": "Integrity", "justify": "right", "style": "bold"}
-        ]
-        
-        check_rows = []
-        for item in file_map:
-            status = "[green]READY TO INSTALL[/green]" if item["exists"] else "[red]DOWNLOAD REQUIRED[/red]"
-            check_rows.append([item["name"], item["size_str"], status])
-        
-        layout["body"].update(generate_table("FILE INTEGRITY VERIFICATION", check_cols, check_rows))
-        time.sleep(3) 
+        # Check Table
+        rows = [[item["name"], item["size"], "[green]Ready[/green]" if item["exists"] else "[red]Missing[/red]"] for item in file_map]
+        layout["body"].update(create_table("FILE INTEGRITY CHECK", ["File", "Size", "Status"], rows))
+        time.sleep(2)
 
-        # ------------------------------------------------------------------
-        # PHASE 3: DOWNLOAD MANAGER
-        # ------------------------------------------------------------------
-        files_to_download = [f for f in file_map if not f["exists"]]
-        
-        if files_to_download:
-            download_progress = Progress(
-                SpinnerColumn(style="bold magenta"),
-                TextColumn("[bold blue]{task.fields[filename]}"),
-                BarColumn(bar_width=None, style="dim", complete_style="bold green"),
-                "[progress.percentage]{task.percentage:>3.0f}%",
-                FileSizeColumn(),
-                TransferSpeedColumn(),
+        # Download Process
+        to_dl = [x for x in file_map if not x["exists"]]
+        if to_dl:
+            prog = Progress(
+                SpinnerColumn(), TextColumn("[bold blue]{task.fields[filename]}"), 
+                BarColumn(style="dim", complete_style="green"), "[progress.percentage]{task.percentage:>3.0f}%", 
+                TransferSpeedColumn()
             )
-            
-            dl_panel = Panel(download_progress, title="[bold yellow]DOWNLOADING FROM PIXELDRAIN[/bold yellow]", border_style="cyan")
-            layout["body"].update(dl_panel)
+            layout["body"].update(Panel(prog, title="[yellow]DOWNLOADING[/yellow]", border_style="cyan"))
             
             dl_tasks = []
-            for item in files_to_download:
-                tid = download_progress.add_task("dl", filename=item["name"], total=None)
-                dl_tasks.append({"tid": tid, "item": item})
+            for item in to_dl:
+                tid = prog.add_task("dl", filename=item["name"], total=None)
+                dl_tasks.append((tid, item))
             
-            for task_data in dl_tasks:
-                tid = task_data["tid"]
-                item = task_data["item"]
-                
-                download_progress.update(tid, description="Connecting...")
+            for tid, item in dl_tasks:
                 try:
                     res = requests.get(item["url"], stream=True, timeout=30)
-                    total_size = int(res.headers.get('content-length', 0))
-                    download_progress.update(tid, total=total_size)
-                    
+                    total = int(res.headers.get('content-length', 0))
+                    prog.update(tid, total=total)
                     with open(item["path"], 'wb') as f:
-                        for chunk in res.iter_content(chunk_size=32768):
-                            if chunk:
-                                f.write(chunk)
-                                download_progress.update(tid, advance=len(chunk))
-                except:
-                    download_progress.console.print(f"[red]Error downloading {item['name']}[/red]")
+                        for chunk in res.iter_content(32768):
+                            f.write(chunk)
+                            prog.update(tid, advance=len(chunk))
+                except: pass
         else:
-            layout["body"].update(Panel(Align.center("[bold green]ALL FILES ARE PRESENT. SKIPPING DOWNLOAD.[/bold green]"), border_style="green"))
-            time.sleep(2)
+            layout["body"].update(Panel(Align.center("[green]Files Cached. Skipping Download.[/green]"), border_style="green"))
+            time.sleep(1)
 
-        # ------------------------------------------------------------------
-        # PHASE 4: INSTALLATION
-        # ------------------------------------------------------------------
-        inst_states = []
-        for item in file_map:
-            inst_states.append({
-                "name": item["name"],
-                "path": item["path"],
-                "stage_copy": "Waiting",
-                "stage_install": "Waiting",
-                "result": "..."
-            })
+        # --- PHASE 3: INSTALL ---
+        inst_states = [{"name": x["name"], "act": "Waiting", "res": "..."} for x in file_map]
+        
+        def render_inst():
+            r = [[s["name"], s["act"], s["res"]] for s in inst_states]
+            return create_table("INSTALLATION QUEUE", ["APK", "Action", "Result"], r)
+
+        layout["body"].update(render_inst())
+
+        for i, item in enumerate(file_map):
+            tmp = "/data/data/com.termux/files/home/inst_tmp.apk"
             
-        inst_cols = [
-            {"name": "APK Package", "justify": "left", "style": "white"},
-            {"name": "Cloning (/data)", "justify": "center", "style": "yellow"},
-            {"name": "Installing (PM)", "justify": "center", "style": "magenta"},
-            {"name": "Final Result", "justify": "right", "style": "bold"}
-        ]
-
-        def render_install_table():
-            rows = []
-            for s in inst_states:
-                rows.append([s["name"], s["stage_copy"], s["stage_install"], s["result"]])
-            return generate_table("PACKAGE INSTALLATION QUEUE", inst_cols, rows)
-
-        layout["body"].update(render_install_table())
-
-        for i, state in enumerate(inst_states):
-            tmp_path = os.path.join(TERMUX_HOME, f"installer_{i}.apk")
-            
-            # COPY
-            inst_states[i]["stage_copy"] = "[yellow]Processing...[/yellow]"
-            layout["body"].update(render_install_table())
-            
-            try:
-                shutil.copyfile(state["path"], tmp_path)
-                inst_states[i]["stage_copy"] = "[green]Done[/green]"
-            except Exception as e:
-                inst_states[i]["stage_copy"] = "[red]Error[/red]"
-                inst_states[i]["result"] = "[red]FAILED[/red]"
-                layout["body"].update(render_install_table())
+            # Copy
+            inst_states[i]["act"] = "[yellow]Cloning...[/yellow]"
+            layout["body"].update(render_inst())
+            try: shutil.copyfile(item["path"], tmp)
+            except: 
+                inst_states[i]["res"] = "[red]Copy Fail[/red]"
                 continue
-            
-            layout["body"].update(render_install_table())
 
-            # INSTALL
-            inst_states[i]["stage_install"] = "[yellow]Running...[/yellow]"
-            layout["body"].update(render_install_table())
+            # Install
+            inst_states[i]["act"] = "[magenta]Installing...[/magenta]"
+            layout["body"].update(render_inst())
             
-            cmd = f'su -c "pm install -r {tmp_path}"'
-            res = run_cmd(cmd, timeout=45)
-            
-            if res and ("Success" in res.stdout or "Success" in res.stderr):
-                inst_states[i]["stage_install"] = "[green]Done[/green]"
-                inst_states[i]["result"] = "[bold green]SUCCESS ✅[/bold green]"
+            res = run_cmd(f'su -c "pm install -r {tmp}"', timeout=60)
+            if res and "Success" in (res.stdout + res.stderr):
+                inst_states[i]["act"] = "[green]Done[/green]"
+                inst_states[i]["res"] = "[bold green]SUCCESS[/bold green]"
             else:
-                inst_states[i]["stage_install"] = "[red]Failed[/red]"
-                inst_states[i]["result"] = "[bold red]ERROR ❌[/bold red]"
+                inst_states[i]["act"] = "[red]Fail[/red]"
+                inst_states[i]["res"] = "[bold red]ERROR[/bold red]"
             
-            if os.path.exists(tmp_path): os.remove(tmp_path)
-            
-            layout["body"].update(render_install_table())
+            if os.path.exists(tmp): os.remove(tmp)
+            layout["body"].update(render_inst())
             time.sleep(0.5)
 
-    # --- FINAL SCREEN ---
-    console.clear()
-    console.print(make_header())
-    console.print(make_info_panel())
-    console.print(Panel(Align.center("[bold green blink]ALL TASKS COMPLETED SUCCESSFULLY![/bold green blink]\n[dim]You may now reboot your device.[/dim]"), border_style="green", box=box.DOUBLE))
+    console.print("[bold green]ALL TASKS COMPLETED. SCRIPT EXITING.[/bold green]")
 
 if __name__ == "__main__":
     try:
         main()
-    except KeyboardInterrupt:
-        console.print("\n[red]User Aborted![/red]")
-        sys.exit(0)
+    except:
+        pass
+    finally:
+        # CỰC KỲ QUAN TRỌNG: KHÔI PHỤC TERMINAL SAU KHI THOÁT
+        # Đây là lệnh fix lỗi không hiện chữ khi gõ phím
+        os.system("stty sane")
+        os.system("stty echo")
+        print("\033[?25h") # Hiện lại con trỏ chuột
 EOF
 
 # CHẠY SCRIPT
 python run_aio.py
-rm run_aio.py
+
+# Xóa file chạy xong để dọn dẹp (Tùy chọn)
+# rm run_aio.py
+
+# Đảm bảo reset lại terminal lần nữa ở cấp độ Bash
+stty sane
