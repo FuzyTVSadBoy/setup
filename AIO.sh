@@ -1,19 +1,21 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # ==============================================================================
-# BOOTLOADER: INIT
+# BOOTLOADER: INIT & FIX TERMINAL SIZE
 # ==============================================================================
+# Buộc terminal cập nhật lại kích thước ngay lập tức
+shopt -s checkwinsize
 stty sane
 clear
-echo -e "\033[1;36m[>] Initializing UGPHONE v8.2 (Static Install)...\033[0m"
+echo -e "\033[1;35m[>] Initializing UGPHONE v8.3 (Responsive & Fix)...\033[0m"
 
 if ! command -v python >/dev/null 2>&1; then
     pkg install python -y >/dev/null 2>&1
 fi
-pip install rich requests psutil prettytable pytz --no-cache-dir --quiet >/dev/null 2>&1
+pip install rich requests psutil --no-cache-dir --quiet >/dev/null 2>&1
 
 # ==============================================================================
-# MAIN PYTHON SCRIPT (v8.2 MANUAL REFRESH)
+# MAIN PYTHON SCRIPT (v8.3 RESPONSIVE LAYOUT)
 # ==============================================================================
 cat <<EOF > run_aio.py
 import os
@@ -25,10 +27,10 @@ import requests
 import psutil
 import platform
 import socket
-from datetime import datetime
+import signal
 
 # RICH IMPORTS
-from rich.console import Console, Group
+from rich.console import Console
 from rich.panel import Panel
 from rich.layout import Layout
 from rich.live import Live
@@ -53,6 +55,13 @@ TARGET_LINKS = [
 # ==============================================================================
 # HÀM HỆ THỐNG
 # ==============================================================================
+def handle_resize(signum, frame):
+    """Xử lý khi xoay màn hình để không bị crash"""
+    # Rich tự động xử lý phần lớn, hàm này để giữ app sống
+    pass
+
+signal.signal(signal.SIGWINCH, handle_resize)
+
 def run_cmd(command, timeout=60):
     try:
         result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=timeout)
@@ -85,19 +94,25 @@ def get_ip():
     except: return "Unknown"
 
 # ==============================================================================
-# UI COMPONENTS
+# UI COMPONENTS (RESPONSIVE DESIGN)
 # ==============================================================================
 def make_layout():
+    """
+    Tạo Layout linh hoạt (Responsive).
+    Thay vì dùng size cố định cho tất cả, ta dùng ratio cho phần Body 
+    để nó tự co giãn khi xoay màn hình.
+    """
     layout = Layout()
     layout.split(
-        Layout(name="header", size=3),
-        Layout(name="info", size=6),
-        Layout(name="body")
+        Layout(name="header", size=3),      # Header cố định nhỏ
+        Layout(name="info", size=7),        # Info cố định vừa
+        Layout(name="body", ratio=1)        # Body tự co giãn (quan trọng để fix lỗi vỡ)
     )
-    # Khởi tạo tĩnh
-    layout["header"].update(Panel(Align.center("[bold magenta]UGPHONE AIO v8.2 (Static Refresh)[/bold magenta]"), style="magenta", box=box.HEAVY))
-    layout["info"].update(Panel(Align.center("Loading..."), border_style="blue"))
-    layout["body"].update(Panel(Align.center("[yellow]Please Wait...[/yellow]"), border_style="white"))
+    
+    # Init Static Content
+    layout["header"].update(Panel(Align.center("[bold magenta]UGPHONE AIO v8.3 (Responsive)[/bold magenta]"), style="magenta", box=box.HEAVY))
+    layout["info"].update(Panel(Align.center("Loading System Info..."), border_style="blue"))
+    layout["body"].update(Panel(Align.center("[yellow]Initializing...[/yellow]"), border_style="white"))
     return layout
 
 def update_info_panel(layout):
@@ -105,19 +120,21 @@ def update_info_panel(layout):
     ram = psutil.virtual_memory()
     disk = psutil.disk_usage('/')
     
-    grid = Table.grid(expand=True, padding=(0, 2))
+    # Grid tự động co giãn
+    grid = Table.grid(expand=True, padding=(0, 1))
     grid.add_column(style="cyan", justify="right")
     grid.add_column(style="white")
     grid.add_column(style="cyan", justify="right")
     grid.add_column(style="white")
     
-    grid.add_row("Device:", uname.machine, "IP:", get_ip())
-    grid.add_row("Android:", uname.release, "Storage:", f"{disk.percent}% Free")
+    grid.add_row("Dev:", uname.machine, "IP:", get_ip())
+    grid.add_row("OS:", uname.release, "Space:", f"{disk.percent}% Free")
     grid.add_row("RAM:", f"{ram.percent}% Used", "Root:", "YES" if os.getuid()==0 else "NO")
     
-    layout["info"].update(Panel(grid, title="[yellow]SYSTEM DIAGNOSTICS[/yellow]", border_style="blue"))
+    layout["info"].update(Panel(grid, title="[yellow]SYSTEM INFO[/yellow]", border_style="blue"))
 
 def generate_table(title, headers, data):
+    # expand=True là chìa khóa để bảng tự fix chiều rộng khi xoay ngang/dọc
     table = Table(title=f"[bold yellow]{title}[/bold yellow]", expand=True, box=box.ROUNDED, border_style="green")
     for h in headers: table.add_column(h)
     for row in data: table.add_row(*row)
@@ -129,12 +146,11 @@ def generate_table(title, headers, data):
 def main():
     layout = make_layout()
     
-    # QUAN TRỌNG: auto_refresh=False để tắt hoàn toàn việc tự vẽ lại
-    # Chúng ta sẽ gọi live.refresh() thủ công khi cần.
+    # auto_refresh=False: Chống nháy hình
     with Live(layout, auto_refresh=False, screen=True) as live:
         
         update_info_panel(layout)
-        live.refresh() # Vẽ lần 1
+        live.refresh()
         
         # --- PHASE 1: INIT ---
         tasks = [
@@ -146,28 +162,28 @@ def main():
         ]
         
         for i, task in enumerate(tasks):
-            tasks[i]["status"] = "[yellow]Running...[/yellow]"
+            tasks[i]["status"] = "[yellow]...[/yellow]"
             rows = [[t["name"], t["status"]] for t in tasks]
             layout["body"].update(generate_table("SYSTEM PREP", ["Task", "Status"], rows))
-            live.refresh() # Cập nhật UI
+            live.refresh()
             
             if task.get("action") == "dl_tool":
                 if download_file_simple(TOOL_URL, TOOL_PATH):
-                    tasks[i]["status"] = "[green]OK ✅[/green]"
+                    tasks[i]["status"] = "[green]OK[/green]"
                 else:
-                    tasks[i]["status"] = "[red]Fail ❌[/red]"
+                    tasks[i]["status"] = "[red]Fail[/red]"
             else:
                 run_cmd(task["cmd"], timeout=5)
-                tasks[i]["status"] = "[green]OK ✅[/green]"
+                tasks[i]["status"] = "[green]OK[/green]"
             
             rows = [[t["name"], t["status"]] for t in tasks]
             layout["body"].update(generate_table("SYSTEM PREP", ["Task", "Status"], rows))
-            live.refresh() # Cập nhật UI sau khi xong
+            live.refresh()
             time.sleep(0.2)
         
-        time.sleep(1)
+        time.sleep(0.5)
 
-        # --- PHASE 2: CHECK FILES ---
+        # --- PHASE 2: CHECK ---
         file_map = []
         for idx, url in enumerate(TARGET_LINKS):
             fname = f"Delta_Clone_ByCherry_{idx+1}.apk"
@@ -182,8 +198,8 @@ def main():
         # --- PHASE 3: DOWNLOAD ---
         to_download = [x for x in file_map if not x["exists"]]
         if to_download:
-            # Riêng phần Download bật auto_refresh tạm thời để thanh loading chạy mượt
-            live.auto_refresh = True 
+            # Bật refresh tạm thời cho Progress Bar mượt
+            live.auto_refresh = True
             
             prog = Progress(
                 SpinnerColumn(), TextColumn("[bold blue]{task.fields[filename]}"), 
@@ -209,42 +225,42 @@ def main():
                                 prog.update(tid, advance=len(chunk))
                 except: pass
             
-            live.auto_refresh = False # Tắt lại auto_refresh trước khi vào Install
+            live.auto_refresh = False
         else:
             layout["body"].update(Panel(Align.center("[bold green]ALL FILES CACHED[/bold green]"), border_style="green"))
             live.refresh()
             time.sleep(1)
 
-        # --- PHASE 4: INSTALLATION (NO FLICKER ZONE) ---
+        # --- PHASE 4: INSTALL ---
         inst_states = [{"name": x["name"], "act": "Waiting", "res": "..."} for x in file_map]
         
         def render_inst():
             rows = [[s["name"], s["act"], s["res"]] for s in inst_states]
             layout["body"].update(generate_table("INSTALLATION QUEUE", ["APK", "Action", "Result"], rows))
-            live.refresh() # Chỉ vẽ lại khi gọi hàm này
+            live.refresh()
 
         render_inst()
 
         for i, item in enumerate(file_map):
             tmp_path = "/data/data/com.termux/files/home/temp_inst.apk"
             
-            # 1. Copy
+            # Copy
             inst_states[i]["act"] = "[yellow]Cloning...[/yellow]"
-            render_inst() # Vẽ lại UI
-            
+            render_inst()
             try: shutil.copyfile(item["path"], tmp_path)
             except: 
                 inst_states[i]["act"] = "[red]Error[/red]"
                 render_inst()
                 continue
 
-            # 2. Install
+            # Install
             inst_states[i]["act"] = "[magenta]Installing...[/magenta]"
-            render_inst() # Vẽ lại UI và ĐỨNG IM ở đây cho đến khi cài xong
+            render_inst()
             
+            # Chạy lệnh cài đặt
             res = run_cmd(f'su -c "pm install -r {tmp_path}"', timeout=60)
             
-            # 3. Result
+            # Result
             if res and ("Success" in res.stdout or "Success" in res.stderr):
                 inst_states[i]["act"] = "[green]Done[/green]"
                 inst_states[i]["res"] = "[bold green]SUCCESS[/bold green]"
@@ -253,7 +269,7 @@ def main():
                 inst_states[i]["res"] = "[bold red]FAIL[/bold red]"
             
             if os.path.exists(tmp_path): os.remove(tmp_path)
-            render_inst() # Vẽ lại kết quả
+            render_inst()
             time.sleep(0.5)
 
     console.clear()
@@ -263,9 +279,11 @@ def main():
 if __name__ == "__main__":
     try: main()
     except: pass
-    finally: os.system("stty sane")
 EOF
 
+# CHẠY SCRIPT
 python run_aio.py
+
+# DỌN DẸP & RESET TERMINAL (SỬA LỖI SYNTAX Ở ĐÂY)
 rm run_aio.py
-os.system("stty sane")
+stty sane
