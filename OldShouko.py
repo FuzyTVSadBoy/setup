@@ -326,6 +326,45 @@ CONFIG_FILE = "Shouko.dev/config.json"
 version = "1.1.1 | Created By Shouko.dev | Bug Fixes and improve By Im Not Vi"
 
 class Utilities:
+    # Dán đoạn này vào trong class Utilities
+    @staticmethod
+    def display_status_table():
+        try:
+            # Xóa màn hình (Dùng cls cho Windows hoặc clear cho Linux/Android)
+            os.system('cls' if os.name == 'nt' else 'clear')
+            
+            # Tạo bảng (Sử dụng thư viện Rich đã import ở đầu file)
+            table = Table(title="[bold blue]Shouko.dev - Auto Rejoin[/bold blue]", box=ROUNDED)
+            
+            table.add_column("Package", style="cyan", no_wrap=True)
+            table.add_column("Username", style="magenta")
+            table.add_column("Status", style="green")
+
+            # Lấy thông tin hệ thống
+            cpu = psutil.cpu_percent()
+            mem = psutil.virtual_memory().percent
+            print(f"\nCPU: {cpu}% | RAM: {mem}%")
+
+            # Lấy dữ liệu an toàn (dùng list để tránh lỗi RuntimeError)
+            statuses = list(globals().get("package_statuses", {}).items())
+            
+            for pkg, info in statuses:
+                # Cắt gọn tên package nếu quá dài
+                pkg_short = pkg if len(pkg) < 20 else "..." + pkg[-17:]
+                user = info.get("Username", "Unknown")
+                status = info.get("Status", "Checking...")
+                table.add_row(pkg_short, user, status)
+
+            console = Console()
+            console.print(table)
+            
+            # In hướng dẫn thoát
+            print("\n[Ctrl+C] để dừng tool.")
+            
+        except Exception as e:
+            # Nếu lỗi vẽ bảng thì bỏ qua, không làm crash tool
+            pass
+            
     @staticmethod
     def collect_garbage():
         gc.collect()
@@ -692,6 +731,13 @@ class SystemMonitor:
             return False
 
 class RobloxManager:
+    @staticmethod
+    def kill_roblox(package_name):
+        try:
+            subprocess.run(['am', 'force-stop', package_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            print(f"Error killing {package_name}: {e}")
+            
     @staticmethod
     def get_cookie():
         try:
