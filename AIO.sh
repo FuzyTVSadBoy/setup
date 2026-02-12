@@ -1,40 +1,52 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # ==============================================================================
-# BOOTLOADER v8.7: AUTO-SWITCH REPO (ASIA/VN OPTIMIZED)
+# BOOTLOADER v8.8: MEOW-ICE VN MIRROR (SIÊU TỐC ĐỘ)
 # ==============================================================================
 shopt -s checkwinsize
 stty sane
 clear
 
-echo -e "\033[1;33m[>] Initializing UGPHONE v8.7 (Flash Speed)...\033[0m"
+echo -e "\033[1;33m[>] Initializing UGPHONE v8.8 (MeowIce VN)...\033[0m"
 
-# 1. TỰ ĐỘNG CHUYỂN REPO SANG BFSU (SIÊU NHANH CHO VN)
-echo -e "\033[1;36m[+] Optimizing Network (Switching to BFSU Mirror)...\033[0m"
-# Backup nguồn cũ (đề phòng)
+# 1. CẤU HÌNH REPO VIỆT NAM (MEOWICE - HCM)
+echo -e "\033[1;36m[+] Switching to MeowIce Mirror (HCM, VN)...\033[0m"
+
+# Backup nguồn cũ
 cp $PREFIX/etc/apt/sources.list $PREFIX/etc/apt/sources.list.bak 2>/dev/null
-# Ghi đè nguồn mới (BFSU)
-echo "deb https://mirrors.bfsu.edu.cn/termux/termux-main/ stable main" > $PREFIX/etc/apt/sources.list
+
+# Ghi đè nguồn Main
+echo "deb https://mirror.meowsmp.net/termux/termux-main stable main" > $PREFIX/etc/apt/sources.list
+
+# Ghi đè nguồn Root (nếu có file config)
+if [ -f "$PREFIX/etc/apt/sources.list.d/root.list" ]; then
+    echo "deb https://mirror.meowsmp.net/termux/termux-root root stable" > $PREFIX/etc/apt/sources.list.d/root.list
+fi
+
+# Ghi đè nguồn X11 (nếu có file config)
+if [ -f "$PREFIX/etc/apt/sources.list.d/x11.list" ]; then
+    echo "deb https://mirror.meowsmp.net/termux/termux-x11 x11 main" > $PREFIX/etc/apt/sources.list.d/x11.list
+fi
 
 # 2. CẬP NHẬT DANH SÁCH GÓI
 echo -e "\033[1;36m[+] Updating Package Lists...\033[0m"
 apt-get update -qq
 
-# 3. CÀI PYTHON (Nhanh hơn nhờ Mirror mới)
+# 3. CÀI PYTHON (Nhanh như gió)
 if ! command -v python >/dev/null 2>&1; then
     echo -e "\033[1;36m[+] Installing Python...\033[0m"
     apt-get install python -y
 fi
 
-# 4. CÀI THƯ VIỆN (PIP cũng sẽ nhanh hơn do mạng ổn định)
-echo -e "\033[1;36m[+] Installing Dependencies...\033[0m"
+# 4. CÀI THƯ VIỆN (Full cho AIO & OldShouko)
+echo -e "\033[1;36m[+] Installing Dependencies (Rich, Psutil, Pytz...)\033[0m"
 pip install rich requests psutil prettytable pytz --break-system-packages --quiet || pip install rich requests psutil prettytable pytz --quiet
 
 echo -e "\033[1;32m[OK] Environment Optimized. Launching...\033[0m"
 sleep 1
 
 # ==============================================================================
-# MAIN PYTHON SCRIPT (v8.7 STABLE)
+# MAIN PYTHON SCRIPT (v8.8 RESPONSIVE)
 # ==============================================================================
 cat <<EOF > run_aio.py
 import os
@@ -107,7 +119,7 @@ def make_layout():
         Layout(name="info", size=7),
         Layout(name="body", ratio=1)
     )
-    layout["header"].update(Panel(Align.center("[bold magenta]UGPHONE AIO v8.7 (Flash Speed)[/bold magenta]"), style="magenta", box=box.HEAVY))
+    layout["header"].update(Panel(Align.center("[bold magenta]UGPHONE AIO v8.8 (MeowIce VN)[/bold magenta]"), style="magenta", box=box.HEAVY))
     layout["info"].update(Panel(Align.center("Loading..."), border_style="blue"))
     layout["body"].update(Panel(Align.center("[yellow]Starting...[/yellow]"), border_style="white"))
     return layout
