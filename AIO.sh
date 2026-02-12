@@ -1,18 +1,32 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # ==============================================================================
-# BOOTLOADER: INIT & FIX TERMINAL SIZE
+# BOOTLOADER: HIỂN THỊ CHI TIẾT (KHÔNG CHẠY NGẦM)
 # ==============================================================================
-# Buộc terminal cập nhật lại kích thước ngay lập tức
+# Reset terminal size & state
 shopt -s checkwinsize
 stty sane
 clear
-echo -e "\033[1;35m[>] Initializing UGPHONE v8.3 (Responsive & Fix)...\033[0m"
 
+echo -e "\033[1;33m[>] Initializing UGPHONE v8.4 (Transparent Boot)...\033[0m"
+
+# 1. KIỂM TRA PYTHON (CÓ HIỂN THỊ TIẾN TRÌNH)
 if ! command -v python >/dev/null 2>&1; then
-    pkg install python -y >/dev/null 2>&1
+    echo -e "\033[1;36m[+] Python not found. Installing now...\033[0m"
+    # Xóa >/dev/null để hiện tiến trình tải
+    pkg update -y
+    pkg install python -y
+else
+    echo -e "\033[1;32m[OK] Python is already installed.\033[0m"
 fi
-pip install rich requests psutil --no-cache-dir --quiet >/dev/null 2>&1
+
+# 2. CÀI THƯ VIỆN (CÓ HIỂN THỊ LỖI NẾU CÓ)
+echo -e "\033[1;36m[+] Checking libraries (Rich, Requests)...\033[0m"
+# Thêm --break-system-packages để fix lỗi trên Termux mới
+pip install rich requests prettytable pytz psutil --break-system-packages --quiet || pip install rich requests prettytable pytz psutil --quiet
+
+echo -e "\033[1;32m[OK] Environment Ready. Launching UI...\033[0m"
+sleep 1
 
 # ==============================================================================
 # MAIN PYTHON SCRIPT (v8.3 RESPONSIVE LAYOUT)
