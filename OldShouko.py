@@ -234,6 +234,8 @@ executors = {
     "Cryptic Clone 018": "/storage/emulated/0/RobloxClone018/Cryptic/",
     "Cryptic Clone 019": "/storage/emulated/0/RobloxClone019/Cryptic/",
     "Cryptic Clone 020": "/storage/emulated/0/RobloxClone020/Cryptic/",
+    "KRNL": "/storage/emulated/0/krnl/",
+    "Trigon": "/storage/emulated/0/Trigon/",
     "FrostWare": "/storage/emulated/0/FrostWare/",
     "FrostWare Clone 001": "/storage/emulated/0/RobloxClone001/FrostWare/",
     "FrostWare Clone 002": "/storage/emulated/0/RobloxClone002/FrostWare/",
@@ -255,23 +257,22 @@ executors = {
     "FrostWare Clone 018": "/storage/emulated/0/RobloxClone018/FrostWare/",
     "FrostWare Clone 019": "/storage/emulated/0/RobloxClone019/FrostWare/",
     "FrostWare Clone 020": "/storage/emulated/0/RobloxClone020/FrostWare/",
+    "Evon": "/storage/emulated/0/Evon/",
 }
 
 # --- AUTO DETECT WORKSPACE PATHS (FIXED FOR DELTA) ---
 def find_all_workspaces():
     possible_paths = set()
 
-    # 1. Thêm các đường dẫn Executor CŨ (từ biến executors)
+    # 1. Thêm các đường dẫn Executor CŨ (Fluxus, Codex...)
     for base_path in executors.values():
         possible_paths.add(os.path.join(base_path, "Workspace"))
         possible_paths.add(os.path.join(base_path, "workspace"))
     
-    # 2. Thêm đường dẫn DELTA MỚI (Android/data) - QUAN TRỌNG
+    # 2. Thêm đường dẫn DELTA MỚI (Android/data) - ĐÃ SỬA LỖI GLOOP
     try:
-        # Lấy prefix package từ config hoặc mặc định là com.roblox
         prefix = globals().get("package_prefix", "com.roblox")
-        
-        # Chạy lệnh shell để lấy danh sách package
+        # Quét package thật trên máy
         cmd = f"pm list packages {prefix} | sed 's/package://'"
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
         
@@ -279,37 +280,34 @@ def find_all_workspaces():
             for line in result.stdout.strip().splitlines():
                 pkg = line.strip()
                 if pkg:
-                    # Đường dẫn gốc của Delta mới: .../files/gloop/external/
-                    delta_external = f"/sdcard/Android/data/{pkg}/files/gloop/external/"
+                    # Đường dẫn gốc của Delta (Sửa  gloop -> gloop)
+                    # Delta có thể lưu ở external hoặc external/etc, ta thêm cả 2 cho chắc
+                    delta_paths = [
+                        f"/sdcard/Android/data/{pkg}/files/gloop/external/",
+                        f"/sdcard/Android/data/{pkg}/files/gloop/external/etc/"
+                    ]
                     
-                    # Thêm workspace trong external
-                    possible_paths.add(os.path.join(delta_external, "workspace"))
-                    possible_paths.add(os.path.join(delta_external, "Workspace"))
-
-                    # Dự phòng: Đôi khi nó nằm thẳng trong files/workspace
-                    possible_paths.add(f"/sdcard/Android/data/{pkg}/files/workspace")
-                    possible_paths.add(f"/sdcard/Android/data/{pkg}/files/Workspace")
+                    for base in delta_paths:
+                        possible_paths.add(os.path.join(base, "workspace"))
+                        possible_paths.add(os.path.join(base, "Workspace"))
 
     except Exception as e:
         print(f"\033[1;31m[ Shouko.dev ] - Error scanning Delta workspaces: {e}\033[0m")
 
-    # 3. Quét các thư mục gốc thông thường (Backup)
+    # 3. Quét thư mục gốc (Backup)
     common_roots = ["/storage/emulated/0", "/sdcard", "/storage/emulated/0/Download"]
     for root in common_roots:
         if os.path.exists(root):
             try:
-                # Quét độ sâu tối đa là 3 folder để tránh lag
                 for dirpath, dirnames, _ in os.walk(root, topdown=True):
-                    if dirpath.count(os.path.sep) - root.count(os.path.sep) > 3:
+                    if dirpath.count(os.path.sep) - root.count(os.path.sep) > 2:
                         del dirnames[:]; continue
                     for d in dirnames:
                         if d.lower() == "workspace": 
                             possible_paths.add(os.path.join(dirpath, d))
             except: pass
             
-    # 4. Chỉ trả về những đường dẫn thực sự TỒN TẠI
     final_paths = [p for p in possible_paths if os.path.exists(p) and os.path.isdir(p)]
-    
     return final_paths
 
 workspace_paths = find_all_workspaces()
@@ -323,9 +321,9 @@ SERVER_LINKS_FILE = "Shouko.dev/server-links.txt"
 ACCOUNTS_FILE = "Shouko.dev/accounts.txt"
 CONFIG_FILE = "Shouko.dev/config.json"
 
-version = "1.1.1 | Created By Shouko.dev | Bug Fixes and improve By Im Not Vi"
+version = "2.2.6 | Created By Shouko.dev | Bug Fixes By Nexus Hideout"
 
-class Utilities:            
+class Utilities:
     @staticmethod
     def collect_garbage():
         gc.collect()
@@ -693,13 +691,6 @@ class SystemMonitor:
 
 class RobloxManager:
     @staticmethod
-    def kill_roblox(package_name):
-        try:
-            subprocess.run(['am', 'force-stop', package_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception as e:
-            print(f"Error killing {package_name}: {e}")
-            
-    @staticmethod
     def get_cookie():
         try:
             current_dir = os.getcwd()
@@ -933,8 +924,8 @@ class RobloxManager:
     @staticmethod
     def inject_cookies_and_appstorage():
         RobloxManager.kill_roblox_processes()
-        db_url = "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/library/Cookies"
-        appstorage_url = "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/library/appStorage.json"
+        db_url = "https://raw.githubusercontent.com/nghvit/module/refs/heads/main/import/Cookies"
+        appstorage_url = "https://raw.githubusercontent.com/nghvit/module/refs/heads/main/import/appStorage.json"
 
         downloaded_db_path = FileManager.download_file(db_url, "Cookies.db", binary=True)
         downloaded_appstorage_path = FileManager.download_file(appstorage_url, "appStorage.json", binary=False)
@@ -1159,8 +1150,8 @@ class UIManager:
     def print_header(version):
         console = Console()
         header = Text(r"""
-     _                 _             _          
-    | |               | |           | |          
+      _                   _             _          
+     | |                 | |           | |          
  ___| |__   ___  _   _| | _____   __| | _____   __
 / __| '_ \ / _ \| | | | |/ / _ \ / _` |/ _ \ \ / /
 \__ \ | | | (_) | |_| |   < (_) | (_| |  __/\ V / 
@@ -1261,13 +1252,24 @@ class UIManager:
 class ExecutorManager:
     @staticmethod
     def get_new_delta_paths():
+        """
+        Tìm các đường dẫn cài đặt của Delta (New) trong Android/data.
+        Fix: Sửa ' gloop' thành 'gloop' và thêm check thư mục 'etc'.
+        """
         new_paths = []
         try:
             packages = RobloxManager.get_roblox_packages()
             for pkg in packages:
+                # 1. Đường dẫn chuẩn: files/gloop/external
                 base_path = f"/sdcard/Android/data/{pkg}/files/gloop/external/"
                 if os.path.exists(base_path):
                     new_paths.append(base_path)
+                
+                # 2. Đường dẫn biến thể: files/gloop/external/etc
+                base_path_etc = f"/sdcard/Android/data/{pkg}/files/gloop/external/etc/"
+                if os.path.exists(base_path_etc):
+                    new_paths.append(base_path_etc)
+                    
         except Exception as e:
             print(f"\033[1;31m[ Shouko.dev ] - Error scanning new Delta paths: {e}\033[0m")
         return new_paths
@@ -1277,6 +1279,7 @@ class ExecutorManager:
         console = Console()
         detected_executors = []
 
+        # 1. Detect Executor Cũ (Fluxus, Codex, Arceus...)
         for executor_name, base_path in executors.items():
             possible_autoexec_paths = [
                 os.path.join(base_path, "Autoexec"),
@@ -1289,15 +1292,19 @@ class ExecutorManager:
                     console.print(f"[bold green][ Shouko.dev ] - Detected executor (Old Path): {executor_name}[/bold green]")
                     break
         
+        # 2. Detect Delta Mới (gloop)
         new_delta_paths = ExecutorManager.get_new_delta_paths()
         if new_delta_paths:
             found_sub = False
+            # Các thư mục con mà Delta dùng để chứa script
+            target_subs = ["Autoexec", "autoexec", "Autoexecute", "scripts", "Scripts"]
+            
             for base_path in new_delta_paths:
-                subfolders = ["Autoexec", "autoexec", "Autoexecute"]
-                for sub in subfolders:
+                for sub in target_subs:
                     if os.path.exists(os.path.join(base_path, sub)):
                         found_sub = True
                         break
+                if found_sub: break
             
             if found_sub and "Delta (New Path)" not in detected_executors:
                 detected_executors.append("Delta (New Path)")
@@ -1311,13 +1318,11 @@ class ExecutorManager:
         source_file = os.path.join("Shouko.dev", "checkui.lua")
         lua_script_content = ""
 
-        # --- BƯỚC 1: ĐỌC SCRIPT GỐC TỪ FILE ---
+        # Đọc nội dung script từ file nguồn
         try:
             if os.path.exists(source_file):
                 with open(source_file, "r", encoding="utf-8") as f:
                     lua_script_content = f.read().strip()
-                
-                # Cập nhật ngược lại biến global để các hàm khác dùng nếu cần
                 globals()["lua_script_template"] = lua_script_content
             else:
                 console.print(f"[bold red][ Executor ] Không tìm thấy file nguồn: {source_file}[/bold red]")
@@ -1330,16 +1335,12 @@ class ExecutorManager:
             console.print("[bold red][ Executor ] File script nguồn bị rỗng![/bold red]")
             return
 
-        # --- BƯỚC 2: GHI VÀO CÁC EXECUTOR CŨ (Logic cũ, đã xóa KRNL) ---
+        # --- GHI VÀO EXECUTOR CŨ ---
         for executor_name in detected_executors:
-            # Bỏ qua Delta mới để xử lý riêng ở dưới
             if executor_name == "Delta (New Path)": continue
 
-            # Chỉ xử lý nếu nằm trong danh sách executors cũ
             if executor_name in executors:
                 base_path = executors[executor_name]
-                
-                # Tìm các thư mục Autoexec truyền thống
                 possible_paths = [
                     os.path.join(base_path, "Autoexec"),
                     os.path.join(base_path, "Autoexecute"),
@@ -1353,29 +1354,25 @@ class ExecutorManager:
                             with open(target_file, 'w', encoding="utf-8") as file:
                                 file.write(lua_script_content)
                             console.print(f"[bold green][ Shouko.dev ] - Installed (Old Path): {executor_name}[/bold green]")
-                            break # Ghi được vào 1 folder là đủ
+                            break 
                         except Exception as e:
                             console.print(f"[bold red]Error writing to {executor_name}: {e}[/bold red]")
 
-        # --- BƯỚC 3: GHI VÀO ĐƯỜNG DẪN DELTA MỚI (Logic Fix) ---
-        # Logic: Tìm vào external -> Tìm tiếp subfolder (Autoexec/...) -> Ghi file
+        # --- GHI VÀO DELTA MỚI (FIX GLOOP) ---
         new_delta_paths = ExecutorManager.get_new_delta_paths()
         if new_delta_paths:
             console.print(f"[bold yellow][ Shouko.dev ] - Scanning and Installing to Delta (New Paths)...[/bold yellow]")
             
             for base_path in new_delta_paths:
-                # base_path lúc này là: .../Android/data/{pkg}/files/gloop/external/
-                
-                # Các tên thư mục con mà Delta có thể dùng để chứa script
-                target_subs = ["Autoexec", "autoexec", "Autoexecute"]
-                
-                # Biến cờ để biết đã ghi thành công cho package này chưa
+                # base_path là: .../files/gloop/external/
+                # Delta có thể dùng Autoexec hoặc scripts
+                target_subs = ["Autoexec", "autoexec", "Autoexecute", "scripts", "Scripts"]
                 written = False
                 
                 for sub in target_subs:
-                    # Tạo đường dẫn đầy đủ: .../external/Autoexec
                     target_dir = os.path.join(base_path, sub)
                     
+                    # Nếu thư mục tồn tại thì ghi vào
                     if os.path.exists(target_dir):
                         target_file = os.path.join(target_dir, "shouko_heartbeat.lua")
                         try:
@@ -1390,18 +1387,19 @@ class ExecutorManager:
 
                             console.print(f"[bold green][ Shouko.dev ] - Installed Delta: {pkg_name} (Folder: {sub})[/bold green]")
                             written = True
-                            break # Tìm thấy 1 thư mục hợp lệ và ghi xong thì dừng, chuyển sang package tiếp theo
+                            break # Ghi được 1 chỗ là đủ cho package này
                         except Exception as e:
                             console.print(f"[bold red]Error writing to Delta path: {e}[/bold red]")
                 
                 if not written:
-                    pass
+                    pass # Không tìm thấy thư mục Autoexec nào
                     
     @staticmethod
     def check_executor_status(package_name, continuous=True, max_wait_time=180):
         retry_timeout = time.time() + max_wait_time
         while True:
-            for workspace in globals()["workspace_paths"]:
+            # Check file .main trong Workspace (Dùng global workspace_paths đã được fix ở find_all_workspaces)
+            for workspace in globals().get("workspace_paths", []):
                 id = globals()["_user_"][package_name]
                 file_path = os.path.join(workspace, f"{id}.main")
                 if os.path.exists(file_path):
@@ -1475,7 +1473,7 @@ class ExecutorManager:
     @staticmethod
     def reset_executor_file(package_name):
         try:
-            for workspace in globals()["workspace_paths"]:
+            for workspace in globals().get("workspace_paths", []):
                 id = globals()["_user_"][package_name]
                 file_path = os.path.join(workspace, f"{id}.main")
                 if os.path.exists(file_path):
@@ -1483,100 +1481,117 @@ class ExecutorManager:
         except:
             pass
 
-# Giữ hàm này để lấy CPU trên VMOS (bắt buộc)
-def get_cpu_usage_shell(package_name):
-    try:
-        cmd = f"top -n 1 -b | grep {package_name}"
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        if result.stdout:
-            lines = result.stdout.strip().split('\n')
-            for line in lines:
-                if package_name in line:
-                    parts = line.split()
-                    for part in parts:
-                        clean_part = part.replace('%', '')
-                        if '.' in clean_part and clean_part.replace('.', '').isdigit():
-                            try:
-                                cpu_val = float(clean_part)
-                                if 0.0 <= cpu_val <= 800.0: return cpu_val
-                            except: continue
-        return 0.0
-    except: return 0.0
-
 class Runner:
-    BOOT_GRACE = 300       
-    HEARTBEAT_TIMEOUT = 60 
+    BOOT_GRACE = 300       # 5 phút
+    HEARTBEAT_TIMEOUT = 15 # 15s timeout
+    TELEPORT_MAX_WAIT = 60 # 60s chờ teleport
     
-    proc_cache = {}
-    path_cache = {}
-    launch_times = {}
-    low_cpu_start = {} 
+    launch_times = {}      # Lưu thời gian launch
+    proc_cache = {}        # Cache process CPU
+    path_cache = {}        # Cache đường dẫn file
+    teleport_start = {}    # Lưu thời điểm bắt đầu Teleport
+
+    @classmethod
+    def get_package_cpu(cls, package_name):
+        total_cpu = 0.0
+        try:
+            # Tìm process cha
+            parent = None
+            if package_name in cls.proc_cache:
+                parent = cls.proc_cache[package_name]
+            
+            # Nếu cache lỗi hoặc chưa có, tìm lại
+            if not parent or not parent.is_running():
+                for p in psutil.process_iter(['name', 'cmdline']):
+                    try:
+                        if package_name in (p.info['cmdline'] or []) or package_name in (p.info['name'] or ''):
+                            parent = p
+                            cls.proc_cache[package_name] = p
+                            break
+                    except: continue
+            
+            if parent:
+                # Cộng CPU của cha
+                total_cpu += parent.cpu_percent(interval=0.1)
+                
+                # Cộng CPU của tất cả con cái (Children)
+                for child in parent.children(recursive=True):
+                    try:
+                        total_cpu += child.cpu_percent(interval=0.1)
+                    except: pass
+                    
+        except: pass
+        
+        # Làm tròn 1 chữ số
+        return round(total_cpu, 1)
 
     @classmethod
     def get_heartbeat_status(cls, user_id):
         filename = f"heartbeat_{user_id}.txt"
         file_path_found = None
         
-        # 1. Tìm file trong Cache
+        # 1. Tìm trong Cache (Nhanh nhất)
         if user_id in cls.path_cache:
             if os.path.exists(cls.path_cache[user_id]):
                 file_path_found = cls.path_cache[user_id]
             else: del cls.path_cache[user_id]
 
-        # 2. Tìm file trong Delta Path (Gloop)
+        # 2. Tìm trực tiếp trong Delta (gloop) - QUAN TRỌNG
+        # Logic này giúp tool tìm thấy file ngay cả khi workspace_paths chưa cập nhật
         if not file_path_found:
             target_pkg = None
+            # Tìm package name dựa vào UserID
             for pkg, uid in globals().get("_user_", {}).items():
-                if str(uid) == str(user_id): target_pkg = pkg; break
+                if str(uid) == str(user_id):
+                    target_pkg = pkg
+                    break
             
             if target_pkg:
+                # Các đường dẫn khả thi của Delta
                 potential_paths = [
                     f"/sdcard/Android/data/{target_pkg}/files/gloop/external/Workspace/{filename}",
-                    f"/sdcard/Android/data/{target_pkg}/files/gloop/external/workspace/{filename}",
-                    f"/sdcard/Android/data/{target_pkg}/files/workspace/{filename}",
-                    f"/sdcard/Android/data/{target_pkg}/files/Workspace/{filename}"
+                    f"/sdcard/Android/data/{target_pkg}/files/gloop/external/workspace/{filename}"
                 ]
+                
                 for p in potential_paths:
                     if os.path.exists(p):
-                        file_path_found = p; cls.path_cache[user_id] = p; break
+                        file_path_found = p
+                        cls.path_cache[user_id] = p # Lưu lại để lần sau tìm cho nhanh
+                        break
 
-        # 3. Tìm file trong Workspace Path
         if not file_path_found:
             for ws in globals().get("workspace_paths", []):
                 path = os.path.join(ws, filename)
                 if os.path.exists(path):
-                    cls.path_cache[user_id] = path; file_path_found = path; break
+                    cls.path_cache[user_id] = path
+                    file_path_found = path
+                    break
         
-        # Đọc nội dung file
         data = {"status": "UNKNOWN", "time": 0}
         if file_path_found:
             try:
                 with open(file_path_found, 'r', encoding='utf-8', errors='ignore') as f:
                     content = f.read().strip()
-                    # LOGIC CŨ: Tách chuỗi để lấy Status gốc
-                    parts = content.split("|")
-                    if len(parts) >= 2:
-                        data["status"] = parts[0] # Lấy "Script Connected" ở đây
-                        try: data["time"] = int(float(parts[1]))
-                        except: data["time"] = 0
+                    if "|" in content:
+                        parts = content.split("|")
+                        data["status"] = parts[0]
+                        data["time"] = int(float(parts[1]))
                     else:
-                        # Fallback nếu script chỉ ghi mỗi chữ "Script Connected" không có time
-                        data["status"] = content if content else "ALIVE"
-                        data["time"] = int(time.time()) # Fake time để không bị timeout
+                        data["status"] = "ALIVE"
+                        data["time"] = int(float(content))
                 
-                # Xóa file sau khi đọc (cơ chế heartbeat 1 chiều)
                 try: os.remove(file_path_found)
                 except: pass
             except: pass
+            
         return data
 
     @classmethod
     def launch_package_sequentially(cls, server_links):
+        # Tự động chép Script Lua
         if globals().get("check_exec_enable") == "1":
-            try:
-                det = ExecutorManager.detect_executors()
-                if det: ExecutorManager.write_lua_script(det)
-            except: pass
+            det = ExecutorManager.detect_executors()
+            if det: ExecutorManager.write_lua_script(det)
 
         for pkg, link in server_links:
             uid = globals()["_user_"].get(pkg)
@@ -1584,154 +1599,136 @@ class Runner:
             
             if pkg in cls.proc_cache: del cls.proc_cache[pkg]
             if uid in cls.path_cache: del cls.path_cache[uid]
-            if uid in cls.low_cpu_start: del cls.low_cpu_start[uid]
+            if uid in cls.teleport_start: del cls.teleport_start[uid]
+
+            # Xóa file cũ
+            for ws in globals().get("workspace_paths", []):
+                try: os.remove(os.path.join(ws, f"heartbeat_{uid}.txt"))
+                except: pass
 
             with status_lock:
                 globals()["package_statuses"][pkg] = {
                     "Username": FileManager.get_username(uid),
-                    "Status": "\033[1;33mLaunching...\033[0m"
+                    "Status": "\033[1;33mPreparing...\033[0m"
                 }
             
-            print(f"\033[1;32m[ Shouko.dev ] - Starting: {pkg}\033[0m")
+            print(f"\033[1;32m[ Shouko.dev ] - Launching: {pkg}\033[0m")
             RobloxManager.launch_roblox(pkg, link)
             cls.launch_times[uid] = time.time()
-            time.sleep(15) 
+            time.sleep(15)
 
     @classmethod
     def monitor_presence(cls, server_links, stop_event):
+        print("\033[1;36m[ Runner ] - Monitor V17 (Anti-False Kill)...\033[0m")
+        low_cpu_start = {}
+
         while not stop_event.is_set():
-            active_packages = list(server_links)
-            
-            for pkg, link in active_packages:
-                uid = globals()["_user_"].get(pkg)
-                if not uid: continue
-
-                rejoin = False
-                st = ""
-                status_color = "\033[1;32m"
-                
+            try:
                 now = time.time()
-                lt_launch = cls.launch_times.get(uid, 0)
                 
-                if lt_launch == 0: continue
-
-                # --- LẤY DỮ LIỆU ---
-                pkg_cpu = get_cpu_usage_shell(pkg)
-                hb_data = cls.get_heartbeat_status(uid)
-                last_hb = hb_data["time"]
-                status_lua = hb_data["status"] # Đây chính là chữ "Script Connected"
-                
-                # --- LOGIC HIỂN THỊ (Đã khôi phục) ---
-                
-                # 1. Nếu script gửi Status đặc biệt -> Hiển thị ngay lập tức
-                if status_lua not in ["UNKNOWN", "ALIVE", ""]:
-                    # Đây là chỗ hiển thị "Script Connected"
-                    if status_lua == "SHUTDOWN" or status_lua == "ERROR":
-                        st = "Kick / Crash"
-                        status_color = "\033[1;31m"
-                        rejoin = True
-                    elif status_lua == "TELEPORT":
-                        st = "Teleporting..."
-                        status_color = "\033[1;35m"
-                        cls.launch_times[uid] = now - cls.BOOT_GRACE + 60
-                    else:
-                        # HIỂN THỊ NGUYÊN VĂN FILE TEXT (Script Connected, Farming, v.v.)
-                        st = status_lua
-                        status_color = "\033[1;32m"
-
-                # 2. Nếu không có status đặc biệt, check Booting
-                elif (now - lt_launch < cls.BOOT_GRACE):
-                    boot_time = int(now - lt_launch)
-                    st = f"Booting... ({boot_time}s)"
-                    status_color = "\033[1;36m"
-                
-                # 3. Check CPU (Crash/Treo)
-                elif pkg_cpu == 0.0:
-                    if (now - last_hb < 20) and (last_hb > 0):
-                        st = "Script Connected (Hidden)" # Vẫn cho hiện Connected
-                    else:
-                        st = "Crashed (No Process)"
-                        status_color = "\033[1;31m"
-                        rejoin = True
-                
-                elif pkg_cpu < 1.0: 
-                    if uid not in cls.low_cpu_start: cls.low_cpu_start[uid] = now
-                    elif now - cls.low_cpu_start[uid] > 90:
-                        st = "Frozen"
-                        status_color = "\033[1;31m"
-                        rejoin = True
-                    else:
-                         # Nếu đang Script Connected mà CPU thấp thì vẫn hiện Script Connected
-                         if "Connected" in st or "Farming" in st:
-                             pass 
-                         else:
-                             st = "Low CPU (Checking)"
-                             status_color = "\033[1;33m"
-                else:
-                    if uid in cls.low_cpu_start: del cls.low_cpu_start[uid]
-                    # Nếu status rỗng thì mặc định là Joined
-                    if st == "": 
-                        st = "Joined Roblox"
-
-                # 4. Check Timeout
-                if not rejoin and "Booting" not in st and "Teleport" not in st:
-                    if (now - last_hb > cls.HEARTBEAT_TIMEOUT) and (last_hb > 0):
-                         st = f"No Signal (> {cls.HEARTBEAT_TIMEOUT}s)"
-                         status_color = "\033[1;31m"
-                         rejoin = True
-                    elif last_hb == 0 and "Joined" in st and (now - lt_launch > cls.BOOT_GRACE):
-                         st = "Stuck Loading"
-                         status_color = "\033[1;31m"
-                         rejoin = True
-
-                # Cập nhật bảng
-                with status_lock:
-                    globals()["package_statuses"][pkg] = {
-                        "Username": FileManager.get_username(uid),
-                        "Status": f"{status_color}{st}\033[0m"
-                    }
-
-                if rejoin:
-                    print(f"\033[1;33m[ Shouko.dev ] - Rejoining {pkg}: {st}\033[0m")
-                    try: RobloxManager.kill_roblox(pkg)
-                    except: subprocess.run(['am', 'force-stop', pkg], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                for pkg, _ in server_links:
+                    uid = globals()["_user_"].get(pkg)
+                    if not uid: continue
                     
-                    time.sleep(3)
-                    RobloxManager.launch_roblox(pkg, link)
-                    cls.launch_times[uid] = time.time()
-                    if uid in cls.path_cache: del cls.path_cache[uid]
-                    if uid in cls.low_cpu_start: del cls.low_cpu_start[uid]
-                    time.sleep(10)
+                    hb_data = cls.get_heartbeat_status(uid)
+                    last_hb = hb_data["time"]
+                    status_lua = hb_data["status"]
+                    lt_launch = cls.launch_times.get(uid, 0)
+                    
+                    st = "\033[1;30mUnknown\033[0m"
+                    rejoin = False
+                    pkg_cpu = cls.get_package_cpu(pkg)
+                    
+                    # 1. LOW CPU CHECK (Nới lỏng để tránh kill oan)
+                    # Chỉ check sau 30s khởi động
+                    # Ngưỡng: < 10% trong 30s liên tục -> Mới coi là treo
+                    if (now - lt_launch > 30) and (pkg_cpu < 10.0):
+                        if uid not in low_cpu_start:
+                            low_cpu_start[uid] = now
+                        elif now - low_cpu_start[uid] > 30: 
+                            st = f"\033[1;31mFROZEN/CRASH ({pkg_cpu:.1f}% > 30s)\033[0m"
+                            rejoin = True
+                    else:
+                        if uid in low_cpu_start: del low_cpu_start[uid]
 
-            time.sleep(5)
+                    if not rejoin:
+                        # 2. HEARTBEAT CHECK
+                        if now - last_hb < cls.HEARTBEAT_TIMEOUT and last_hb > 0:
+                            if status_lua != "TELEPORT" and uid in cls.teleport_start:
+                                del cls.teleport_start[uid]
+
+                            if status_lua == "SHUTDOWN":
+                                st = "\033[1;31mGame Closed / Kicked\033[0m"
+                                rejoin = True
+                            
+                            elif status_lua == "TELEPORT":
+                                if uid not in cls.teleport_start: cls.teleport_start[uid] = now
+                                elapsed = int(now - cls.teleport_start[uid])
+                                st = f"\033[1;35mTeleporting... ({elapsed}s/60s) | CPU: {pkg_cpu:.1f}%\033[0m"
+                                if elapsed > cls.TELEPORT_MAX_WAIT:
+                                    st = "\033[1;31mTeleport Stuck (>60s)\033[0m"; rejoin = True
+                            
+                            elif status_lua == "TELEPORT_FAIL":
+                                st = f"\033[1;33mTeleport Failed | CPU: {pkg_cpu:.1f}%\033[0m"
+                            
+                            else: # ALIVE
+                                st = f"\033[1;32mConnected (Ping: {now-last_hb:.1f}s) | CPU: {pkg_cpu:.1f}%\033[0m"
+
+                        # 3. NO SIGNAL CHECK
+                        else:
+                            if uid in cls.teleport_start:
+                                elapsed = int(now - cls.teleport_start[uid])
+                                if elapsed < cls.TELEPORT_MAX_WAIT:
+                                    st = f"\033[1;35mTeleporting (No Signal)... ({elapsed}s)\033[0m"
+                                else:
+                                    st = "\033[1;31mTeleport Timeout\033[0m"; rejoin = True
+                            
+                            elif now - lt_launch < cls.BOOT_GRACE:
+                                rem = int(cls.BOOT_GRACE - (now - lt_launch))
+                                st = f"\033[1;33mBooting ({rem}s) | CPU: {pkg_cpu:.1f}%\033[0m"
+                            
+                            else:
+                                st = "\033[1;31mNO SIGNAL (Timeout 15s)\033[0m"; rejoin = True
+
+                    with status_lock:
+                        if pkg in globals()["package_statuses"]:
+                            globals()["package_statuses"][pkg]["Status"] = st
+                    
+                    if rejoin:
+                        print(f"\033[1;31m[AutoRejoin] {uid} -> Rejoining...\033[0m")
+                        if uid in low_cpu_start: del low_cpu_start[uid]
+                        if uid in cls.teleport_start: del cls.teleport_start[uid]
+                        if pkg in cls.proc_cache: del cls.proc_cache[pkg]
+                        
+                        link = dict(server_links).get(pkg)
+                        if link:
+                            RobloxManager.kill_roblox_process(pkg)
+                            RobloxManager.delete_cache_for_package(pkg)
+                            time.sleep(2)
+                            with status_lock: globals()["package_statuses"][pkg]["Status"] = "\033[1;36mRejoining...\033[0m"
+                            threading.Thread(target=RobloxManager.launch_roblox, args=(pkg, link), daemon=True).start()
+                            cls.launch_times[uid] = time.time()
+                            time.sleep(5)
+
+            except Exception: pass
+            time.sleep(5) # Quét mỗi 5s
 
     @staticmethod
-    def force_rejoin(server_links, interval, stop_event):
-        while not stop_event.is_set():
-            time.sleep(interval)
-            print("\033[1;36m[ Shouko.dev ] - Scheduled Force Rejoin...\033[0m")
-            for pkg, link in server_links:
-                uid = globals()["_user_"].get(pkg)
-                if uid:
-                    try: RobloxManager.kill_roblox(pkg)
-                    except: pass
-                    time.sleep(2)
-                    RobloxManager.launch_roblox(pkg, link)
-                    Runner.launch_times[uid] = time.time()
-                    time.sleep(10)
+    def force_rejoin(links, interval, stop):
+        start = time.time()
+        while not stop.is_set():
+            if interval != float('inf') and (time.time() - start >= interval):
+                 RobloxManager.kill_roblox_processes(); start = time.time(); time.sleep(5)
+                 Runner.launch_package_sequentially(links)
+            time.sleep(60)
 
     @staticmethod
     def update_status_table_periodically():
-        while True:
-            try:
-                # Gọi đúng hàm UI gốc của bạn
-                Utilities.display_status_table() 
-            except: pass
-            time.sleep(2)
-
+        while True: UIManager.update_status_table(); time.sleep(2)
+                            
 def check_activation_status():
     try:
-        response = requests.get("https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/library/customize", timeout=5)
+        response = requests.get("https://raw.githubusercontent.com/nghvit/module/refs/heads/main/status/customize", timeout=5)
         response.raise_for_status()
         content = response.text.strip()
         if content == "true":
@@ -1772,7 +1769,8 @@ def main():
     
     FileManager._load_config()
 
-    LUA_NEW = r"""local R=game:GetService("RunService");local C=game:GetService("CoreGui");local G=game:GetService("GuiService");local T=game:GetService("TeleportService");local P=game:GetService("Players");local L=P.LocalPlayer;local F="heartbeat_"..tostring(L.UserId)..".txt";local iT=false;local function W(s)pcall(function()if writefile then writefile(F,s.."|"..tostring(os.time()))end end)end;local function E()local p=C:FindFirstChild("RobloxPromptGui");if p then local o=p:FindFirstChild("promptOverlay")if o and o.Visible then return true end end;local s,m=pcall(function()return G:GetErrorMessage()end)if s and m and m~=""then return true end;if not L or not L.Parent then return true end;return false end;task.spawn(function()W("ALIVE")while true do task.wait(2)if not iT then if E()then W("ERROR")else W("ALIVE")end end end end);L.OnTeleport:Connect(function(s)if s==Enum.TeleportState.Started then iT=true;W("TELEPORT")end end);T.TeleportInitFailed:Connect(function()iT=false;W("ALIVE")end);P.PlayerRemoving:Connect(function(p)if p==L then W("ERROR")end end);G.ErrorMessageChanged:Connect(function()if G:GetErrorMessage()~=""then W("ERROR")end end)"""
+    LUA_NEW = r"""local Plr=game:GetService("Players").LocalPlayer;local TS=game:GetService("TeleportService");local FILE="heartbeat_"..tostring(Plr.UserId)..".txt";local isK=false;local isTp=false;local function log(s)pcall(function()if writefile then writefile(FILE,s.."|"..tostring(os.time()))end end)end;task.spawn(function()log("ALIVE");while true do task.wait(2);if not isK and not isTp then log("ALIVE")end end end);Plr.OnTeleport:Connect(function()isTp=true;log("TELEPORT")end);TS.TeleportInitFailed:Connect(function()isTp=false;log("TELEPORT_FAIL");task.wait(1);log("ALIVE")end);pcall(function()local mt=getrawmetatable(game);local old=mt.__namecall;setreadonly(mt,false);mt.__namecall=newcclosure(function(self,...)local m=getnamecallmethod();if tostring(self)=="TeleportService"and(m=="Teleport"or m=="TeleportToPlaceInstance"or m=="TeleportAsync")then isTp=true end;if m=="Kick"and self==Plr then isK=true;log("KICK")end;return old(self,...)end);setreadonly(mt,true)end);game:GetService("Players").PlayerRemoving:Connect(function(p)if p==Plr and not isTp then isK=true;log("KICK")end end)"""
+
     if not globals().get("command_8_configured", False):
         globals()["check_exec_enable"] = "1"
         globals()["lua_script_template"] = LUA_NEW
@@ -1833,15 +1831,8 @@ def main():
                 fr_int = float('inf') if fr_input.lower() == 'q' else int(fr_input) * 60
 
                 # START
-                print("\033[1;32m[ Shouko.dev ] - Killing old processes...\033[0m")
-                RobloxManager.kill_roblox_processes()
-                time.sleep(2)
-                
-                # --- CHỖ NÀY LÀ CHỖ HAY BỊ LỖI ---
-                # Đảm bảo bạn truyền biến server_links vào trong ngoặc
-                Runner.launch_package_sequentially(server_links) 
-                # ---------------------------------
-
+                RobloxManager.kill_roblox_processes(); time.sleep(2)
+                Runner.launch_package_sequentially(server_links)
                 globals()["is_runner_ez"] = True
 
                 t1 = threading.Thread(target=Runner.monitor_presence, args=(server_links, stop_main_event), daemon=True)
@@ -1853,8 +1844,6 @@ def main():
                 while not stop_main_event.is_set(): time.sleep(100)
 
             except Exception as e:
-                # In ra traceback đầy đủ để dễ debug nếu vẫn lỗi
-                print(f"Error details: {traceback.format_exc()}")
                 print(f"Error: {e}"); input("Enter..."); continue
                 
         if setup_type == "2":
@@ -1938,7 +1927,8 @@ def main():
         
         elif setup_type == "5":
             try:
-                LUA_SRC = r"""local R=game:GetService("RunService");local C=game:GetService("CoreGui");local G=game:GetService("GuiService");local T=game:GetService("TeleportService");local P=game:GetService("Players");local L=P.LocalPlayer;local F="heartbeat_"..tostring(L.UserId)..".txt";local iT=false;local function W(s)pcall(function()if writefile then writefile(F,s.."|"..tostring(os.time()))end end)end;local function E()local p=C:FindFirstChild("RobloxPromptGui");if p then local o=p:FindFirstChild("promptOverlay")if o and o.Visible then return true end end;local s,m=pcall(function()return G:GetErrorMessage()end)if s and m and m~=""then return true end;if not L or not L.Parent then return true end;return false end;task.spawn(function()W("ALIVE")while true do task.wait(2)if not iT then if E()then W("ERROR")else W("ALIVE")end end end end);L.OnTeleport:Connect(function(s)if s==Enum.TeleportState.Started then iT=true;W("TELEPORT")end end);T.TeleportInitFailed:Connect(function()iT=false;W("ALIVE")end);P.PlayerRemoving:Connect(function(p)if p==L then W("ERROR")end end);G.ErrorMessageChanged:Connect(function()if G:GetErrorMessage()~=""then W("ERROR")end end)"""
+                LUA_SRC = r"""local Plr=game:GetService("Players").LocalPlayer;local TS=game:GetService("TeleportService");local FILE="heartbeat_"..tostring(Plr.UserId)..".txt";local isK=false;local isTp=false;local function log(s)pcall(function()if writefile then writefile(FILE,s.."|"..tostring(os.time()))end end)end;task.spawn(function()log("ALIVE");while true do task.wait(2);if not isK and not isTp then log("ALIVE")end end end);Plr.OnTeleport:Connect(function()isTp=true;log("TELEPORT")end);TS.TeleportInitFailed:Connect(function()isTp=false;log("TELEPORT_FAIL");task.wait(1);log("ALIVE")end);pcall(function()local mt=getrawmetatable(game);local old=mt.__namecall;setreadonly(mt,false);mt.__namecall=newcclosure(function(self,...)local m=getnamecallmethod();if tostring(self)=="TeleportService"and(m=="Teleport"or m=="TeleportToPlaceInstance"or m=="TeleportAsync")then isTp=true end;if m=="Kick"and self==Plr then isK=true;log("KICK")end;return old(self,...)end);setreadonly(mt,true)end);game:GetService("Players").PlayerRemoving:Connect(function(p)if p==Plr and not isTp then isK=true;log("KICK")end end)"""
+                
                 print("\033[1;35m[1]\033[1;32m Heartbeat Check (Recommended)\033[0m \033[1;35m[2]\033[1;36m Online Check (API Roblox)\033[0m")
                 choice = input("\033[1;93mSelect (1-2): \033[0m").strip()
                 
@@ -2013,67 +2003,61 @@ def main():
 
         elif setup_type == "8":
             try:
-                print("\033[1;36m[ Shouko.dev ] - Input Custom Script Mode (Multi-line)\033[0m")
-                print("\033[1;33mHãy paste script của bạn vào dưới đây. Gõ \033[1;31m'end'\033[1;33m ở một dòng riêng biệt để kết thúc:\033[0m")
+                print("\033[1;36m[ Shouko.dev ] - Input Custom Script Mode\033[0m")
+                print("\033[1;33mPaste your script below (Must be ONE LINE or Minified) and press Enter:\033[0m")
                 
-                # Logic nhập nhiều dòng
-                lines = []
-                while True:
-                    line = sys.stdin.readline()
-                    if not line: break
-                    if line.strip().lower() == 'end':
-                        break
-                    lines.append(line)
-                
-                script_content = "".join(lines).strip()
+                script_content = input().strip()
                 
                 if not script_content:
-                    print("\033[1;31m[ Shouko.dev ] - Script trống. Đã hủy bỏ.\033[0m")
+                    print("\033[1;31m[ Shouko.dev ] - Empty script. Cancelled.\033[0m")
                 else:
-                    # 1. Lưu file nguồn để dự phòng
+                    # Lưu file nguồn
                     os.makedirs("Shouko.dev", exist_ok=True)
                     with open("Shouko.dev/custom_script.txt", "w", encoding="utf-8") as f:
                         f.write(script_content)
                     
-                    # 2. Cài đặt vào các Executor truyền thống (Đường dẫn cũ)
+                    # 1. Cài đặt vào Executor CŨ (Giữ nguyên)
                     detected = ExecutorManager.detect_executors()
                     if detected:
                         for exec_name in detected:
                             if exec_name == "Delta (New Path)": continue
                             if exec_name in executors:
                                 base = executors[exec_name]
-                                targets = ["Autoexec", "autoexec", "Autoexecute"]
+                                targets = [
+                                    os.path.join(base, "Autoexec"),
+                                    os.path.join(base, "autoexec"),
+                                    os.path.join(base, "Autoexecute")
+                                ]
                                 for t in targets:
-                                    target_dir = os.path.join(base, t)
-                                    if os.path.exists(target_dir):
+                                    if os.path.exists(t):
                                         try:
-                                            with open(os.path.join(target_dir, "z_custom.txt"), "w", encoding="utf-8") as f:
+                                            with open(os.path.join(t, "z_custom.txt"), "w", encoding="utf-8") as f:
                                                 f.write(script_content)
                                             print(f"\033[1;32m + Installed to {exec_name} (Old Path)\033[0m")
                                             break
                                         except: pass
                     
-                    # 3. Cài đặt vào Delta (Đường dẫn Android/data mới)
+                    # 2. Cài đặt vào Executor MỚI (FIXED)
                     new_delta_paths = ExecutorManager.get_new_delta_paths()
                     if new_delta_paths:
-                        for base_path in new_delta_paths:
-                            # base_path: .../files/gloop/external/
+                         for base_path in new_delta_paths:
+                            # base_path: .../external/
                             target_subs = ["Autoexec", "autoexec", "Autoexecute"]
                             for sub in target_subs:
-                                target_dir = os.path.join(base_path, sub)
+                                target_dir = os.path.join(base_path, sub) # .../external/autoexec
                                 if os.path.exists(target_dir):
                                     try:
                                         with open(os.path.join(target_dir, "z_custom.txt"), "w", encoding="utf-8") as f:
                                             f.write(script_content)
                                         pkg_name = base_path.split("/Android/data/")[1].split("/")[0]
-                                        print(f"\033[1;32m + Installed to Delta: {pkg_name} (in {sub})\033[0m")
+                                        print(f"\033[1;32m + Installed to Delta (New Path): {pkg_name} (in {sub})\033[0m")
                                         break
                                     except: pass
 
             except Exception as e:
                 print(f"\033[1;31mError: {e}\033[0m")
             
-            input("\033[1;32mNhấn Enter để quay lại menu...\033[0m")
+            input("\033[1;32mPress Enter to return...\033[0m")
             continue
 
 if __name__ == "__main__":
