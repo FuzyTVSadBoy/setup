@@ -63,9 +63,9 @@ TOOL_URL = "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main
 
 # [LƯU Ý] NẾU PIXELDRAIN VẪN LỖI, HÃY DÙNG LINK GITHUB RELEASE
 TARGET_LINKS = [
-    "https://pixeldrain.com/api/file/qTMZ8NVA?download",
-    "https://pixeldrain.com/api/file/bcccMBDy?download",
-    "https://pixeldrain.com/api/file/eohaWnEh?download"
+    "https://www.dropbox.com/scl/fi/3h9b51dx9ps7kio8vgcqq/DeltaGlobalCloneByCherry-1-2.706.750.apk?rlkey=9uxoj85co0bl0v8drk6lmjybq&st=ew4fw6q5&dl=1",
+    "https://www.dropbox.com/scl/fi/7v9d3l9dkboq8ib12sbjg/DeltaGlobalCloneByCherry-2-2.706.750.apk?rlkey=owvcrqsn91zf2v1is8mlnw0bp&st=wdldibvv&dl=1",
+    "https://www.dropbox.com/scl/fi/xi7oc77d5cp42jcrs0lfw/DeltaGlobalCloneByCherry-3-2.706.750.apk?rlkey=j2xf74h6f6xmkv54x4kldigl8&st=6q8zyrg6&dl=1"
 ]
 
 # --- HỆ THỐNG ---
