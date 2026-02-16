@@ -49,39 +49,54 @@ globals()["is_runner_ez"] = False
 globals()["check_exec_enable"] = "1"
 globals()["CPU_METHOD"] = "Init..." # Biến toàn cục hiển thị Mode CPU
 
-# --- HÀM LẤY CPU MỚI (SIMPLEPERF + TOP FALLBACK) ---
+SIMPLEPERF_PATH = None
+possible_paths = ["/system/bin/simpleperf", "/system/xbin/simpleperf", "/data/local/tmp/simpleperf"]
+for p in possible_paths:
+    if os.path.exists(p):
+        SIMPLEPERF_PATH = p
+        break
+
 try:
-    # Lấy tổng số luồng CPU để chia % cho chuẩn
     TOTAL_CORES = int(subprocess.getoutput("nproc"))
 except:
     TOTAL_CORES = psutil.cpu_count() or 8
 
 def get_cpu_usage_shell(package_name):
-    # CÁCH 1: SIMPLEPERF (Chính xác nhất)
-    try:
-        cmd = f"su -c '/system/bin/simpleperf stat --app {package_name} --duration 0.5 2>&1'"
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        output = result.stdout
-        
-        # Regex tìm "CPUs utilized" (Format mới của simpleperf)
-        match_cpu = re.search(r'(\d+(\.\d+)?)\s+CPUs utilized', output)
-        if match_cpu:
-            cpus_used = float(match_cpu.group(1))
-            final_cpu = (cpus_used / TOTAL_CORES) * 100
-            globals()["CPU_METHOD"] = "Simpleperf" 
-            return round(final_cpu, 1)
+    # CÁCH 1: SIMPLEPERF (Nếu tìm thấy file)
+    if SIMPLEPERF_PATH:
+        try:
+            # Chạy lệnh và lấy cả Output lẫn Error
+            cmd = f"su -c '{SIMPLEPERF_PATH} stat --app {package_name} --duration 0.5 2>&1'"
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            output = result.stdout
             
-        # Regex tìm "task-clock" (Format cũ)
-        match_task = re.search(r'(\d+(\.\d+)?)\s+task-clock', output)
-        if match_task:
-            task_clock_ms = float(match_task.group(1))
-            # 0.5s duration = 500ms
-            final_cpu = (task_clock_ms / (500 * TOTAL_CORES)) * 100
-            globals()["CPU_METHOD"] = "Simpleperf"
-            return round(final_cpu, 1)
-    except: pass
+            # --- DEBUG: Bỏ comment dòng dưới nếu muốn xem output thô ---
+            # print(f"[DEBUG-SIMPLEPERF] Output: {output[:50]}...") 
 
-    # CÁCH 2: TOP (Fallback an toàn)
+            # Regex 1: Tìm "CPUs utilized" (Format mới)
+            match_cpu = re.search(r'(\d+(\.\d+)?)\s+CPUs utilized', output)
+            if match_cpu:
+                cpus_used = float(match_cpu.group(1))
+                final_cpu = (cpus_used / TOTAL_CORES) * 100
+                globals()["CPU_METHOD"] = "Simpleperf (Native)" 
+                return round(final_cpu, 1)
+            
+            # Regex 2: Tìm "task-clock" (Format cũ)
+            match_task = re.search(r'(\d+(\.\d+)?)\s+task-clock', output)
+            if match_task:
+                task_clock_ms = float(match_task.group(1))
+                # 0.5s duration = 500ms
+                final_cpu = (task_clock_ms / (500 * TOTAL_CORES)) * 100
+                globals()["CPU_METHOD"] = "Simpleperf (Clock)"
+                return round(final_cpu, 1)
+                
+            # Nếu chạy lệnh xong mà không regex được -> Có thể do chưa vào app
+            # print(f"[DEBUG-FAIL] Regex failed for {package_name}")
+
+        except Exception as e:
+            print(f"\033[1;31m[DEBUG-ERROR] Simpleperf error: {e}\033[0m")
+    
+    # CÁCH 2: TOP (Fallback khi Simpleperf tạch)
     try:
         cmd = f"top -n 1 -b | grep {package_name}"
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
@@ -96,11 +111,12 @@ def get_cpu_usage_shell(package_name):
                             try:
                                 raw_val = float(clean_part)
                                 normalized_val = raw_val / TOTAL_CORES
-                                globals()["CPU_METHOD"] = "Top"
+                                globals()["CPU_METHOD"] = "Top (Fallback)"
                                 return round(normalized_val, 1)
                             except: continue
     except: pass
     
+    globals()["CPU_METHOD"] = "Failed (0%)"
     return 0.0
 
 executors = {
