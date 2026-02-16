@@ -1802,7 +1802,11 @@ def main():
     
     FileManager._load_config()
 
-    LUA_NEW = r"""
+    if not globals().get("command_8_configured", False):
+        globals()["check_exec_enable"] = "1"
+        
+        # 1. Khai báo Script Lua mới (Logic Heartbeat an toàn)
+        LUA_NEW = r"""
 local Plr = game:GetService("Players").LocalPlayer
 repeat task.wait() until Plr
 local FILE = "heartbeat_"..tostring(Plr.UserId)..".txt"
@@ -1837,12 +1841,17 @@ game:GetService("Players").PlayerRemoving:Connect(function(p)
     if p == Plr then log("SHUTDOWN") end
 end)
 """
+        # 2. Gán vào biến toàn cục để ExecutorManager sử dụng (QUAN TRỌNG)
+        globals()["lua_script_template"] = LUA_NEW
+
+        # 3. Ghi ra file checkui.lua (Thụt lề đúng chuẩn)
         try:
             os.makedirs("Shouko.dev", exist_ok=True)
-            with open("Shouko.dev/checkui.lua", "w") as f:
+            with open("Shouko.dev/checkui.lua", "w", encoding="utf-8") as f:
                 f.write(LUA_NEW)
             print("\033[1;32m[ Script ] Updated Heartbeat Script (File Mode).\033[0m")
-        except: pass
+        except Exception as e:
+            print(f"\033[1;31m[ Script ] Error saving checkui.lua: {e}\033[0m")
         
         FileManager.save_config()
 
