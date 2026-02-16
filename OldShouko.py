@@ -1559,9 +1559,9 @@ class ExecutorManager:
             pass
 
 class Runner:
-    BOOT_GRACE = 300       
-    HEARTBEAT_TIMEOUT = 15 
-    TELEPORT_MAX_WAIT = 60 
+    BOOT_GRACE = 300       # Thời gian chờ khởi động (giây)
+    HEARTBEAT_TIMEOUT = 15 # Thời gian chờ tín hiệu (giây)
+    TELEPORT_MAX_WAIT = 60 # Thời gian chờ Teleport (giây)
     
     launch_times = {}      
     proc_cache = {}        
@@ -1573,38 +1573,35 @@ class Runner:
         filename = f"heartbeat_{user_id}.txt"
         file_path_found = None
         
+        # 1. Tìm trong Cache
         if user_id in cls.path_cache:
             if os.path.exists(cls.path_cache[user_id]):
                 file_path_found = cls.path_cache[user_id]
             else: del cls.path_cache[user_id]
 
+        # 2. Tìm trong thư mục Delta (Gloop/External)
         if not file_path_found:
             target_pkg = None
             for pkg, uid in globals().get("_user_", {}).items():
-                if str(uid) == str(user_id):
-                    target_pkg = pkg
-                    break
+                if str(uid) == str(user_id): target_pkg = pkg; break
             
             if target_pkg:
                 potential_paths = [
                     f"/sdcard/Android/data/{target_pkg}/files/gloop/external/Workspace/{filename}",
                     f"/sdcard/Android/data/{target_pkg}/files/gloop/external/workspace/{filename}"
                 ]
-                
                 for p in potential_paths:
                     if os.path.exists(p):
-                        file_path_found = p
-                        cls.path_cache[user_id] = p
-                        break
+                        file_path_found = p; cls.path_cache[user_id] = p; break
 
+        # 3. Tìm trong Workspace Paths chung
         if not file_path_found:
             for ws in globals().get("workspace_paths", []):
                 path = os.path.join(ws, filename)
                 if os.path.exists(path):
-                    cls.path_cache[user_id] = path
-                    file_path_found = path
-                    break
+                    cls.path_cache[user_id] = path; file_path_found = path; break
         
+        # Đọc file và lấy nội dung gốc
         data = {"status": "UNKNOWN", "time": 0}
         if file_path_found:
             try:
@@ -1612,11 +1609,12 @@ class Runner:
                     content = f.read().strip()
                     if "|" in content:
                         parts = content.split("|")
-                        data["status"] = parts[0]
-                        data["time"] = int(float(parts[1]))
+                        data["status"] = parts[0] # Lấy chuỗi gốc (VD: Script Connected)
+                        try: data["time"] = int(float(parts[1]))
+                        except: data["time"] = 0
                     else:
                         data["status"] = content if content else "ALIVE"
-                        data["time"] = int(float(content) if content.replace('.','',1).isdigit() else time.time())
+                        data["time"] = int(time.time())
                 
                 try: os.remove(file_path_found)
                 except: pass
@@ -1653,7 +1651,7 @@ class Runner:
 
     @classmethod
     def monitor_presence(cls, server_links, stop_event):
-        print("\033[1;36m[ Runner ] - Monitor Active (Hybrid CPU Check)...\033[0m")
+        print("\033[1;36m[ Runner ] - Monitor Active (Full Details Mode)...\033[0m")
         low_cpu_start = {}
 
         while not stop_event.is_set():
@@ -1666,18 +1664,18 @@ class Runner:
                     
                     hb_data = cls.get_heartbeat_status(uid)
                     last_hb = hb_data["time"]
-                    status_lua = hb_data["status"]
+                    status_lua = hb_data["status"] # Đây là chỗ lấy "Script Connected"
                     lt_launch = cls.launch_times.get(uid, 0)
                     
                     if lt_launch == 0: continue
 
-                    # Lấy CPU bằng hàm mới (Simpleperf/Top)
+                    # Lấy CPU (Simpleperf/Top)
                     pkg_cpu = get_cpu_usage_shell(pkg)
                     
                     st = "\033[1;30mUnknown\033[0m"
                     rejoin = False
                     
-                    # 1. LOW CPU CHECK (Ngưỡng 5.0%)
+                    # 1. CHECK FROZEN (Ngưỡng 5%)
                     if (now - lt_launch > 30) and (pkg_cpu < 5.0):
                         if uid not in low_cpu_start:
                             low_cpu_start[uid] = now
@@ -1688,30 +1686,33 @@ class Runner:
                         if uid in low_cpu_start: del low_cpu_start[uid]
 
                     if not rejoin:
-                        # 2. HEARTBEAT & STATUS CHECK
+                        # 2. XỬ LÝ TRẠNG THÁI TỪ SCRIPT
                         if status_lua in ["SHUTDOWN", "ERROR"]:
-                            st = "Kick / Crash"
+                            st = f"Kick / Crash ({pkg_cpu:.1f}%)"
                             rejoin = True
                         
                         elif status_lua == "TELEPORT":
-                            st = "Teleporting..."
+                            st = f"Teleporting... ({pkg_cpu:.1f}%)"
                             if uid not in cls.teleport_start: cls.teleport_start[uid] = now
                             
                             elapsed = int(now - cls.teleport_start[uid])
                             if elapsed > cls.TELEPORT_MAX_WAIT:
-                                st = "Teleport Stuck"
+                                st = f"Teleport Stuck ({pkg_cpu:.1f}%)"
                                 rejoin = True
                             else:
-                                # Reset boot time để không bị timeout
                                 cls.launch_times[uid] = now - cls.BOOT_GRACE + 60 
                         
+                        # --- KHÔI PHỤC: HIỂN THỊ TRẠNG THÁI GỐC (Script Connected) ---
                         elif status_lua not in ["UNKNOWN", "ALIVE", ""]:
-                            st = status_lua
+                            # Nếu script gửi "Script Connected", "Farming",... hiện y chang
+                            st = f"{status_lua} ({pkg_cpu:.1f}%)"
                             if uid in cls.teleport_start: del cls.teleport_start[uid]
 
+                        # 3. TRẠNG THÁI MẶC ĐỊNH
                         elif (now - lt_launch < cls.BOOT_GRACE):
-                            st = f"Booting... ({int(now - lt_launch)}s)"
-                            if last_hb > 0: st = "Joined Roblox"
+                            st = f"Booting... {int(now - lt_launch)}s ({pkg_cpu:.1f}%)"
+                            if last_hb > 0: 
+                                st = f"Joined Roblox ({pkg_cpu:.1f}%)"
                         
                         elif pkg_cpu == 0.0:
                             if (now - last_hb < 20) and (last_hb > 0):
@@ -1721,19 +1722,21 @@ class Runner:
                                 rejoin = True
                         
                         else:
-                            if st == "": st = f"Joined ({pkg_cpu:.1f}%)"
+                            # Nếu không có status đặc biệt, hiện Joined + CPU
+                            if "Unknown" in st or st == "": 
+                                st = f"Joined ({pkg_cpu:.1f}%)"
 
-                        # 3. TIMEOUT CHECK
+                        # 4. TIMEOUT CHECK
                         if not rejoin and "Booting" not in st and "Teleport" not in st:
                             if (now - last_hb > cls.HEARTBEAT_TIMEOUT) and (last_hb > 0):
-                                st = f"No Signal (> {cls.HEARTBEAT_TIMEOUT}s)"
+                                st = f"No Signal > {cls.HEARTBEAT_TIMEOUT}s ({pkg_cpu:.1f}%)"
                                 rejoin = True
 
                     # Màu sắc hiển thị
-                    st_color = "\033[1;32m"
-                    if rejoin: st_color = "\033[1;31m"
-                    elif "Teleport" in st: st_color = "\033[1;35m"
-                    elif "Booting" in st: st_color = "\033[1;36m"
+                    st_color = "\033[1;32m" # Xanh lá mặc định (Joined, Script Connected)
+                    if rejoin: st_color = "\033[1;31m" # Đỏ (Lỗi)
+                    elif "Teleport" in st: st_color = "\033[1;35m" # Tím
+                    elif "Booting" in st: st_color = "\033[1;36m" # Xanh dương nhạt
 
                     with status_lock:
                         globals()["package_statuses"][pkg] = {
@@ -1742,7 +1745,7 @@ class Runner:
                         }
                     
                     if rejoin:
-                        print(f"\033[1;31m[AutoRejoin] {uid} -> Rejoining...\033[0m")
+                        print(f"\033[1;31m[AutoRejoin] {uid} -> Rejoining... Reason: {st}\033[0m")
                         if uid in low_cpu_start: del low_cpu_start[uid]
                         if uid in cls.teleport_start: del cls.teleport_start[uid]
                         if pkg in cls.proc_cache: del cls.proc_cache[pkg]
@@ -1753,10 +1756,10 @@ class Runner:
                         cls.launch_times[uid] = time.time()
                         time.sleep(5)
 
-                time.sleep(1) # Nghỉ giữa các lần check package
+                time.sleep(1) 
 
             except Exception: pass
-            time.sleep(5) # Chu kỳ quét
+            time.sleep(5) 
 
     @staticmethod
     def force_rejoin(links, interval, stop):
