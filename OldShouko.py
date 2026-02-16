@@ -1559,32 +1559,32 @@ class ExecutorManager:
             pass
 
 class Runner:
-    BOOT_GRACE = 300       # 5 phút
-    HEARTBEAT_TIMEOUT = 15 # 15s timeout
-    TELEPORT_MAX_WAIT = 60 # 60s chờ teleport
+    BOOT_GRACE = 300       # Thời gian tối đa cho 1 lượt chạy (5 phút)
+    SCRIPT_TIMEOUT = 60    # [MỚI] Thời gian chờ Script chạy. Quá 60s không thấy file -> KILL
+    HEARTBEAT_TIMEOUT = 15 # Mất tín hiệu 15s -> KILL
+    TELEPORT_MAX_WAIT = 60 
     
-    launch_times = {}      # Lưu thời gian launch
-    proc_cache = {}        # Cache process CPU
-    path_cache = {}        # Cache đường dẫn file
-    teleport_start = {}    # Lưu thời điểm bắt đầu Teleport
+    launch_times = {}      
+    proc_cache = {}        
+    path_cache = {}        
+    teleport_start = {}    
 
     @classmethod
     def get_heartbeat_status(cls, user_id):
         filename = f"heartbeat_{user_id}.txt"
         file_path_found = None
         
-        # 1. Tìm trong Cache (Nhanh nhất)
+        # 1. Tìm trong Cache
         if user_id in cls.path_cache:
             if os.path.exists(cls.path_cache[user_id]):
                 file_path_found = cls.path_cache[user_id]
             else: del cls.path_cache[user_id]
 
-        # 2. Tìm trực tiếp trong Delta (gloop) - QUAN TRỌNG
+        # 2. Tìm trong Delta Path (gloop)
         if not file_path_found:
             target_pkg = None
             for pkg, uid in globals().get("_user_", {}).items():
                 if str(uid) == str(user_id): target_pkg = pkg; break
-            
             if target_pkg:
                 potential_paths = [
                     f"/sdcard/Android/data/{target_pkg}/files/gloop/external/Workspace/{filename}",
@@ -1594,11 +1594,11 @@ class Runner:
                     if os.path.exists(p):
                         file_path_found = p; cls.path_cache[user_id] = p; break
 
+        # 3. Tìm trong Workspace chung
         if not file_path_found:
             for ws in globals().get("workspace_paths", []):
                 path = os.path.join(ws, filename)
-                if os.path.exists(path):
-                    cls.path_cache[user_id] = path; file_path_found = path; break
+                if os.path.exists(path): cls.path_cache[user_id] = path; file_path_found = path; break
         
         data = {"status": "UNKNOWN", "time": 0}
         if file_path_found:
@@ -1607,7 +1607,7 @@ class Runner:
                     content = f.read().strip()
                     if "|" in content:
                         parts = content.split("|")
-                        data["status"] = parts[0] # Lấy nguyên văn status (VD: Script Connected)
+                        data["status"] = parts[0]
                         try: data["time"] = int(float(parts[1]))
                         except: data["time"] = 0
                     else:
@@ -1616,7 +1616,6 @@ class Runner:
                 try: os.remove(file_path_found)
                 except: pass
             except: pass
-            
         return data
 
     @classmethod
@@ -1635,13 +1634,16 @@ class Runner:
             if uid in cls.path_cache: del cls.path_cache[uid]
             if uid in cls.teleport_start: del cls.teleport_start[uid]
 
-            # MÀU GỐC: Launching là màu Vàng
+            # Xóa file cũ để tránh đọc nhầm
+            for ws in globals().get("workspace_paths", []):
+                try: os.remove(os.path.join(ws, f"heartbeat_{uid}.txt"))
+                except: pass
+
             with status_lock:
                 globals()["package_statuses"][pkg] = {
                     "Username": FileManager.get_username(uid),
                     "Status": "\033[1;33mLaunching...\033[0m"
                 }
-            
             print(f"\033[1;32m[ Shouko.dev ] - Launching: {pkg}\033[0m")
             RobloxManager.launch_roblox(pkg, link)
             cls.launch_times[uid] = time.time()
@@ -1649,13 +1651,10 @@ class Runner:
 
     @classmethod
     def monitor_presence(cls, server_links, stop_event):
-        print("\033[1;36m[ Runner ] - Monitor Active (Hybrid CPU Check)...\033[0m")
         low_cpu_start = {}
-
         while not stop_event.is_set():
             try:
                 now = time.time()
-                
                 for pkg, _ in server_links:
                     uid = globals()["_user_"].get(pkg)
                     if not uid: continue
@@ -1668,76 +1667,73 @@ class Runner:
                     if lt_launch == 0: continue
 
                     pkg_cpu = get_cpu_usage_shell(pkg)
-                    
                     st = ""
                     rejoin = False
                     
-                    # BIẾN MÀU SẮC (Mặc định là Xanh Lá)
-                    final_color = "\033[1;32m" 
-
-                    # 1. FROZEN CHECK
+                    # 1. LOW CPU CHECK (Ngưỡng 5%)
                     if (now - lt_launch > 30) and (pkg_cpu < 5.0):
                         if uid not in low_cpu_start: low_cpu_start[uid] = now
                         elif now - low_cpu_start[uid] > 30: 
-                            st = "FROZEN"; rejoin = True; final_color = "\033[1;31m" # Đỏ
+                            st = f"FROZEN (CPU: {pkg_cpu:.1f}%)"
+                            rejoin = True
                     else:
                         if uid in low_cpu_start: del low_cpu_start[uid]
 
                     if not rejoin:
-                        # 2. STATUS CHECK
+                        # 2. XỬ LÝ HEARTBEAT
                         if status_lua in ["SHUTDOWN", "ERROR"]:
-                            st = "Kick / Crash"; rejoin = True; final_color = "\033[1;31m" # Đỏ
+                            st = f"Kick / Crash (CPU: {pkg_cpu:.1f}%)"; rejoin = True
                         
                         elif status_lua == "TELEPORT":
-                            st = "Teleporting..."
-                            final_color = "\033[1;35m" # Tím (Màu gốc)
+                            st = f"Teleporting... (CPU: {pkg_cpu:.1f}%)"
                             if uid not in cls.teleport_start: cls.teleport_start[uid] = now
                             if now - cls.teleport_start[uid] > cls.TELEPORT_MAX_WAIT:
-                                st = "Teleport Stuck"; rejoin = True; final_color = "\033[1;31m"
+                                st = "Teleport Stuck"; rejoin = True
                             else: cls.launch_times[uid] = now - cls.BOOT_GRACE + 60 
                         
                         elif status_lua not in ["UNKNOWN", "ALIVE", ""]:
-                            st = status_lua # Hiện nguyên văn (Script Connected...)
-                            final_color = "\033[1;32m" # Xanh lá
+                            st = f"{status_lua} | CPU: {pkg_cpu:.1f}%"
                             if uid in cls.teleport_start: del cls.teleport_start[uid]
 
+                        # 3. CHECK TIMEOUT CHO SCRIPT (LOGIC MỚI BẠN YÊU CẦU)
+                        # Nếu đã chạy quá 60s mà chưa từng nhận được file heartbeat nào (last_hb == 0)
+                        elif (now - lt_launch > cls.SCRIPT_TIMEOUT) and (last_hb == 0):
+                            st = f"Script Error / No File (CPU: {pkg_cpu:.1f}%)"
+                            rejoin = True
+
+                        # 4. TRẠNG THÁI BOOTING (Chưa quá timeout)
                         elif (now - lt_launch < cls.BOOT_GRACE):
-                            st = f"Booting... {int(now - lt_launch)}s"
-                            final_color = "\033[1;33m" # Vàng (Màu gốc chuẩn)
                             if last_hb > 0: 
-                                st = "Joined Roblox"
-                                final_color = "\033[1;32m" # Xanh lá
+                                st = f"Joined Roblox | CPU: {pkg_cpu:.1f}%"
+                            else:
+                                st = f"Booting... {int(now - lt_launch)}s | CPU: {pkg_cpu:.1f}%"
                         
                         elif pkg_cpu == 0.0:
-                            if (now - last_hb < 20) and (last_hb > 0): 
-                                st = "Joined (Hidden)"
-                                final_color = "\033[1;32m"
-                            else: 
-                                st = "Crashed (No Process)"
-                                rejoin = True
-                                final_color = "\033[1;31m"
+                            if (now - last_hb < 20) and (last_hb > 0): st = "Joined (Hidden)"
+                            else: st = "Crashed (No Process)"; rejoin = True
+                        
                         else:
-                            st = "Joined Roblox"
-                            final_color = "\033[1;32m"
+                            st = f"Joined | CPU: {pkg_cpu:.1f}%"
 
+                        # 5. CHECK MẤT TÍN HIỆU (Đã từng có file, giờ mất)
                         if not rejoin and "Booting" not in st and "Teleport" not in st:
                             if (now - last_hb > cls.HEARTBEAT_TIMEOUT) and (last_hb > 0):
-                                st = f"No Signal > {cls.HEARTBEAT_TIMEOUT}s"
-                                rejoin = True
-                                final_color = "\033[1;31m"
+                                st = f"No Signal > {cls.HEARTBEAT_TIMEOUT}s"; rejoin = True
 
-                    # 3. GHÉP CHUỖI VÀ MÀU (TUÂN THỦ FILE GỐC)
-                    # Status = Màu + Text + Reset + Info CPU (để CPU màu trắng hoặc theo màu status tùy ý)
-                    full_status = f"{final_color}{st} | CPU: {pkg_cpu:.1f}%\033[0m"
+                    # MÀU SẮC CHUẨN FILE GỐC
+                    st_color = "\033[1;32m"
+                    if rejoin: st_color = "\033[1;31m" # Đỏ
+                    elif "Teleport" in st: st_color = "\033[1;35m" # Tím
+                    elif "Booting" in st: st_color = "\033[1;33m" # Vàng (Đã sửa lại)
 
                     with status_lock:
                         globals()["package_statuses"][pkg] = {
                             "Username": FileManager.get_username(uid),
-                            "Status": full_status
+                            "Status": f"{st_color}{st}\033[0m"
                         }
                     
                     if rejoin:
-                        print(f"\033[1;31m[AutoRejoin] {uid} -> Rejoining...\033[0m")
+                        print(f"\033[1;31m[AutoRejoin] {uid} -> Rejoining... Reason: {st}\033[0m")
                         RobloxManager.kill_roblox_process(pkg)
                         time.sleep(2)
                         RobloxManager.launch_roblox(pkg, dict(server_links).get(pkg))
@@ -1762,7 +1758,7 @@ class Runner:
         while True:
             UIManager.update_status_table()
             time.sleep(2)
-
+            
 def check_activation_status():
     try:
         response = requests.get("https://raw.githubusercontent.com/nghvit/module/refs/heads/main/status/customize", timeout=5)
@@ -1806,12 +1802,41 @@ def main():
     
     FileManager._load_config()
 
-    LUA_NEW = r"""local Plr=game:GetService("Players").LocalPlayer;local TS=game:GetService("TeleportService");local FILE="heartbeat_"..tostring(Plr.UserId)..".txt";local isK=false;local isTp=false;local function log(s)pcall(function()if writefile then writefile(FILE,s.."|"..tostring(os.time()))end end)end;task.spawn(function()log("ALIVE");while true do task.wait(2);if not isK and not isTp then log("ALIVE")end end end);Plr.OnTeleport:Connect(function()isTp=true;log("TELEPORT")end);TS.TeleportInitFailed:Connect(function()isTp=false;log("TELEPORT_FAIL");task.wait(1);log("ALIVE")end);pcall(function()local mt=getrawmetatable(game);local old=mt.__namecall;setreadonly(mt,false);mt.__namecall=newcclosure(function(self,...)local m=getnamecallmethod();if tostring(self)=="TeleportService"and(m=="Teleport"or m=="TeleportToPlaceInstance"or m=="TeleportAsync")then isTp=true end;if m=="Kick"and self==Plr then isK=true;log("KICK")end;return old(self,...)end);setreadonly(mt,true)end);game:GetService("Players").PlayerRemoving:Connect(function(p)if p==Plr and not isTp then isK=true;log("KICK")end end)"""
+    LUA_NEW = r"""
+local Plr = game:GetService("Players").LocalPlayer
+repeat task.wait() until Plr
+local FILE = "heartbeat_"..tostring(Plr.UserId)..".txt"
+local TS = game:GetService("TeleportService")
+local isTp = false
 
-    if not globals().get("command_8_configured", False):
-        globals()["check_exec_enable"] = "1"
-        globals()["lua_script_template"] = LUA_NEW
-        
+-- Hàm ghi file an toàn (Chống crash script)
+local function log(status)
+    pcall(function()
+        if writefile then
+            writefile(FILE, status .. "|" .. tostring(os.time()))
+        end
+    end)
+end
+
+-- Ghi file ngay lập tức để tool biết Executor đã hoạt động
+log("Script Connected")
+
+-- Vòng lặp gửi heartbeat
+task.spawn(function()
+    while true do
+        task.wait(2)
+        if not isTp then log("ALIVE") end
+    end
+end)
+
+-- Bắt sự kiện Teleport/Kick
+Plr.OnTeleport:Connect(function() isTp = true; log("TELEPORT") end)
+TS.TeleportInitFailed:Connect(function() isTp = false; log("TELEPORT_FAIL") end)
+
+game:GetService("Players").PlayerRemoving:Connect(function(p)
+    if p == Plr then log("SHUTDOWN") end
+end)
+"""
         try:
             os.makedirs("Shouko.dev", exist_ok=True)
             with open("Shouko.dev/checkui.lua", "w") as f:
@@ -1963,8 +1988,41 @@ def main():
         
         elif setup_type == "5":
             try:
-                LUA_SRC = r"""local Plr=game:GetService("Players").LocalPlayer;local TS=game:GetService("TeleportService");local FILE="heartbeat_"..tostring(Plr.UserId)..".txt";local isK=false;local isTp=false;local function log(s)pcall(function()if writefile then writefile(FILE,s.."|"..tostring(os.time()))end end)end;task.spawn(function()log("ALIVE");while true do task.wait(2);if not isK and not isTp then log("ALIVE")end end end);Plr.OnTeleport:Connect(function()isTp=true;log("TELEPORT")end);TS.TeleportInitFailed:Connect(function()isTp=false;log("TELEPORT_FAIL");task.wait(1);log("ALIVE")end);pcall(function()local mt=getrawmetatable(game);local old=mt.__namecall;setreadonly(mt,false);mt.__namecall=newcclosure(function(self,...)local m=getnamecallmethod();if tostring(self)=="TeleportService"and(m=="Teleport"or m=="TeleportToPlaceInstance"or m=="TeleportAsync")then isTp=true end;if m=="Kick"and self==Plr then isK=true;log("KICK")end;return old(self,...)end);setreadonly(mt,true)end);game:GetService("Players").PlayerRemoving:Connect(function(p)if p==Plr and not isTp then isK=true;log("KICK")end end)"""
-                
+                LUA_SRC = r"""
+local Plr = game:GetService("Players").LocalPlayer
+repeat task.wait() until Plr
+local FILE = "heartbeat_"..tostring(Plr.UserId)..".txt"
+local TS = game:GetService("TeleportService")
+local isTp = false
+
+-- Hàm ghi file an toàn (Chống crash script)
+local function log(status)
+    pcall(function()
+        if writefile then
+            writefile(FILE, status .. "|" .. tostring(os.time()))
+        end
+    end)
+end
+
+-- Ghi file ngay lập tức để tool biết Executor đã hoạt động
+log("Script Connected")
+
+-- Vòng lặp gửi heartbeat
+task.spawn(function()
+    while true do
+        task.wait(2)
+        if not isTp then log("ALIVE") end
+    end
+end)
+
+-- Bắt sự kiện Teleport/Kick
+Plr.OnTeleport:Connect(function() isTp = true; log("TELEPORT") end)
+TS.TeleportInitFailed:Connect(function() isTp = false; log("TELEPORT_FAIL") end)
+
+game:GetService("Players").PlayerRemoving:Connect(function(p)
+    if p == Plr then log("SHUTDOWN") end
+end)
+"""
                 print("\033[1;35m[1]\033[1;32m Heartbeat Check (Recommended)\033[0m \033[1;35m[2]\033[1;36m Online Check (API Roblox)\033[0m")
                 choice = input("\033[1;93mSelect (1-2): \033[0m").strip()
                 
