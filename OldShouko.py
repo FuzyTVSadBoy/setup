@@ -48,6 +48,9 @@ globals()["_user_"] = {}
 globals()["is_runner_ez"] = False
 globals()["check_exec_enable"] = "1"
 
+
+globals()["CPU_METHOD"] = "Initializing..."
+
 try:
     TOTAL_CORES = int(subprocess.getoutput("nproc"))
 except:
@@ -56,27 +59,30 @@ except:
 def get_cpu_usage_shell(package_name):
     try:
         cmd = f"su -c '/system/bin/simpleperf stat --app {package_name} --duration 0.5 2>&1'"
-        
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
         output = result.stdout
-        match_cpu = re.search(r'(\d+(\.\d+)?)\s+CPUs utilized', output)
         
+        match_cpu = re.search(r'(\d+(\.\d+)?)\s+CPUs utilized', output)
         if match_cpu:
             cpus_used = float(match_cpu.group(1))
             final_cpu = (cpus_used / TOTAL_CORES) * 100
+            
+            globals()["CPU_METHOD"] = "Simpleperf (Native)" 
             return round(final_cpu, 2)
+            
         match_task = re.search(r'(\d+(\.\d+)?)\s+task-clock', output)
         if match_task:
             task_clock_ms = float(match_task.group(1))
             final_cpu = (task_clock_ms / (500 * TOTAL_CORES)) * 100
+            
+            globals()["CPU_METHOD"] = "Simpleperf (Clock)"
             return round(final_cpu, 2)
 
-    except Exception:
-        pass
+    except: pass
+
     try:
         cmd = f"top -n 1 -b | grep {package_name}"
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        
         if result.stdout:
             lines = result.stdout.strip().split('\n')
             for line in lines:
@@ -88,10 +94,12 @@ def get_cpu_usage_shell(package_name):
                             try:
                                 raw_val = float(clean_part)
                                 normalized_val = raw_val / TOTAL_CORES
+                                
+                                globals()["CPU_METHOD"] = "Top (Fallback)"
                                 return round(normalized_val, 2)
                             except: continue
-        return 0.0
-    except: return 0.0
+    except: pass
+    return 0.0
 
 executors = {
     "Fluxus": "/storage/emulated/0/Fluxus/",
@@ -1203,15 +1211,17 @@ class UIManager:
     @staticmethod
     def print_header(version):
         console = Console()
+        # ASCII Art Gốc
         header = Text(r"""
-     _                 _             _          
-    | |               | |           | |          
+      _                   _             _          
+     | |                 | |           | |          
  ___| |__   ___  _   _| | _____   __| | _____   __
 / __| '_ \ / _ \| | | | |/ / _ \ / _` |/ _ \ \ / /
 \__ \ | | | (_) | |_| |   < (_) | (_| |  __/\ V / 
 |___/_| |_|\___/ \__,_|_|\_\___(_)__,_|\___| \_/  
         """, style="bold yellow")
 
+        # Logic đọc config để hiện Method (Giữ nguyên gốc)
         config_file = os.path.join("Shouko.dev", "config.json")
         check_executor = "1"
         
@@ -1238,6 +1248,7 @@ class UIManager:
     def create_dynamic_menu(options):
         console = Console()
 
+        # Bảng Menu Gốc (Rich)
         table = Table(
             header_style="bold white",
             border_style="bright_white",
@@ -1266,18 +1277,25 @@ class UIManager:
         print(table)
 
     last_update_time = 0
-    update_interval = 5
+    update_interval = 2 # Giữ interval thấp để cập nhật nhanh
 
     @staticmethod
     def update_status_table():
         current_time = time.time()
+        # Chỉ vẽ lại sau mỗi 2 giây để tránh nháy màn hình
         if current_time - UIManager.last_update_time < UIManager.update_interval:
             return
         
-        cpu_usage = psutil.cpu_percent(interval=2)
+        # Lấy thông tin hệ thống
+        cpu_usage = psutil.cpu_percent(interval=None)
         memory_info = psutil.virtual_memory()
         ram = round(memory_info.used / memory_info.total * 100, 2)
-        title = f"CPU: {cpu_usage}% | RAM: {ram}%"
+        
+        # Lấy Method Check CPU (Top/Simpleperf) để hiển thị
+        method = globals().get("CPU_METHOD", "Init...")
+        
+        # Tiêu đề bảng (Đã thêm Mode)
+        title = f"CPU: {cpu_usage}% | RAM: {ram}% | Mode: {method}"
 
         table_packages = PrettyTable(
             field_names=["Package", "Username", "Package Status"],
@@ -1286,10 +1304,11 @@ class UIManager:
             align="l"
         )
 
-        # FIX CRASH: Thêm list() để tránh lỗi RuntimeError dictionary changed size
+        # Lặp qua các package (Dùng list() để FIX lỗi dictionary changed size)
         for package, info in list(globals().get("package_statuses", {}).items()):
             username = str(info.get("Username", "Unknown"))
-
+            
+            # Logic che tên username gốc (User*****...)
             if username != "Unknown":
                 obfuscated_username = "******" + username[6:] if len(username) > 6 else "******"
                 username = obfuscated_username
@@ -1300,9 +1319,12 @@ class UIManager:
                 str(info.get("Status", "Unknown"))
             ])
 
+        # Vẽ lại màn hình
         Utilities.clear_screen()
         UIManager.print_header(version)
         print(table_packages)
+        
+        UIManager.last_update_time = time.time()
 
 class ExecutorManager:
     @staticmethod
@@ -1537,66 +1559,14 @@ class ExecutorManager:
             pass
 
 class Runner:
-    BOOT_GRACE = 300       # 5 Phút chờ Boot
-    HEARTBEAT_TIMEOUT = 60 # 60s Timeout
+    BOOT_GRACE = 300       
+    HEARTBEAT_TIMEOUT = 15 
+    TELEPORT_MAX_WAIT = 60 
     
-    # Cache dữ liệu
-    proc_cache = {}
-    path_cache = {}
-    launch_times = {}
-    low_cpu_start = {} 
-    
-    # Lấy tổng số Core 1 lần duy nhất để chia %
-    try: TOTAL_CORES = int(subprocess.getoutput("nproc"))
-    except: TOTAL_CORES = psutil.cpu_count() or 8
-
-    @staticmethod
-    def get_cpu_and_method(package_name):
-        """
-        Trả về tuple: (cpu_percent, method_name)
-        """
-        # CÁCH 1: SIMPLEPERF
-        try:
-            cmd = f"su -c '/system/bin/simpleperf stat --app {package_name} --duration 0.5 2>&1'"
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-            output = result.stdout
-            
-            # Ưu tiên lấy CPUs utilized (chính xác nhất)
-            match_cpu = re.search(r'(\d+(\.\d+)?)\s+CPUs utilized', output)
-            if match_cpu:
-                cpus_used = float(match_cpu.group(1))
-                final_cpu = (cpus_used / Runner.TOTAL_CORES) * 100
-                return round(final_cpu, 2), "Simpleperf"
-                
-            # Fallback sang task-clock
-            match_task = re.search(r'(\d+(\.\d+)?)\s+task-clock', output)
-            if match_task:
-                task_clock_ms = float(match_task.group(1))
-                final_cpu = (task_clock_ms / (500 * Runner.TOTAL_CORES)) * 100
-                return round(final_cpu, 2), "Simpleperf"
-        except: pass
-
-        # CÁCH 2: TOP (Fallback)
-        try:
-            cmd = f"top -n 1 -b | grep {package_name}"
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-            if result.stdout:
-                lines = result.stdout.strip().split('\n')
-                for line in lines:
-                    if package_name in line:
-                        parts = line.split()
-                        for part in parts:
-                            clean_part = part.replace('%', '')
-                            if '.' in clean_part and clean_part.replace('.', '').isdigit():
-                                try:
-                                    raw_val = float(clean_part)
-                                    # Chia cho Total Core để đồng bộ thang đo
-                                    normalized_val = raw_val / Runner.TOTAL_CORES
-                                    return round(normalized_val, 2), "Top"
-                                except: continue
-        except: pass
-        
-        return 0.0, "Unknown"
+    launch_times = {}      
+    proc_cache = {}        
+    path_cache = {}        
+    teleport_start = {}    
 
     @classmethod
     def get_heartbeat_status(cls, user_id):
@@ -1611,45 +1581,55 @@ class Runner:
         if not file_path_found:
             target_pkg = None
             for pkg, uid in globals().get("_user_", {}).items():
-                if str(uid) == str(user_id): target_pkg = pkg; break
+                if str(uid) == str(user_id):
+                    target_pkg = pkg
+                    break
             
             if target_pkg:
                 potential_paths = [
                     f"/sdcard/Android/data/{target_pkg}/files/gloop/external/Workspace/{filename}",
                     f"/sdcard/Android/data/{target_pkg}/files/gloop/external/workspace/{filename}"
                 ]
+                
                 for p in potential_paths:
                     if os.path.exists(p):
-                        file_path_found = p; cls.path_cache[user_id] = p; break
+                        file_path_found = p
+                        cls.path_cache[user_id] = p
+                        break
 
         if not file_path_found:
             for ws in globals().get("workspace_paths", []):
                 path = os.path.join(ws, filename)
                 if os.path.exists(path):
-                    cls.path_cache[user_id] = path; file_path_found = path; break
+                    cls.path_cache[user_id] = path
+                    file_path_found = path
+                    break
         
         data = {"status": "UNKNOWN", "time": 0}
         if file_path_found:
             try:
                 with open(file_path_found, 'r', encoding='utf-8', errors='ignore') as f:
                     content = f.read().strip()
-                    parts = content.split("|")
-                    if len(parts) >= 2:
+                    if "|" in content:
+                        parts = content.split("|")
                         data["status"] = parts[0]
-                        try: data["time"] = int(float(parts[1]))
-                        except: data["time"] = 0
+                        data["time"] = int(float(parts[1]))
                     else:
                         data["status"] = content if content else "ALIVE"
-                        data["time"] = int(time.time())
+                        data["time"] = int(float(content) if content.replace('.','',1).isdigit() else time.time())
+                
                 try: os.remove(file_path_found)
                 except: pass
             except: pass
+            
         return data
 
     @classmethod
     def launch_package_sequentially(cls, server_links):
         if globals().get("check_exec_enable") == "1":
-            try: ExecutorManager.write_lua_script(ExecutorManager.detect_executors())
+            try:
+                det = ExecutorManager.detect_executors()
+                if det: ExecutorManager.write_lua_script(det)
             except: pass
 
         for pkg, link in server_links:
@@ -1658,7 +1638,7 @@ class Runner:
             
             if pkg in cls.proc_cache: del cls.proc_cache[pkg]
             if uid in cls.path_cache: del cls.path_cache[uid]
-            if uid in cls.low_cpu_start: del cls.low_cpu_start[uid]
+            if uid in cls.teleport_start: del cls.teleport_start[uid]
 
             with status_lock:
                 globals()["package_statuses"][pkg] = {
@@ -1666,122 +1646,131 @@ class Runner:
                     "Status": "\033[1;33mLaunching...\033[0m"
                 }
             
-            print(f"\033[1;32m[ Shouko.dev ] - Starting: {pkg}\033[0m")
+            print(f"\033[1;32m[ Shouko.dev ] - Launching: {pkg}\033[0m")
             RobloxManager.launch_roblox(pkg, link)
             cls.launch_times[uid] = time.time()
-            time.sleep(15) 
+            time.sleep(15)
 
     @classmethod
     def monitor_presence(cls, server_links, stop_event):
+        print("\033[1;36m[ Runner ] - Monitor Active (Hybrid CPU Check)...\033[0m")
+        low_cpu_start = {}
+
         while not stop_event.is_set():
-            for pkg, link in server_links:
-                uid = globals()["_user_"].get(pkg)
-                if not uid: continue
-
-                rejoin = False
-                st = ""
-                status_color = "\033[1;32m"
-                
+            try:
                 now = time.time()
-                lt_launch = cls.launch_times.get(uid, 0)
-                if lt_launch == 0: continue
+                
+                for pkg, _ in server_links:
+                    uid = globals()["_user_"].get(pkg)
+                    if not uid: continue
+                    
+                    hb_data = cls.get_heartbeat_status(uid)
+                    last_hb = hb_data["time"]
+                    status_lua = hb_data["status"]
+                    lt_launch = cls.launch_times.get(uid, 0)
+                    
+                    if lt_launch == 0: continue
 
-                # --- LẤY DỮ LIỆU ---
-                # Lấy cả CPU và Tên Method (Simpleperf hay Top)
-                pkg_cpu, cpu_method = cls.get_cpu_and_method(pkg)
-                
-                hb_data = cls.get_heartbeat_status(uid)
-                last_hb = hb_data["time"]
-                status_lua = hb_data["status"]
-                
-                # Tag hiển thị method (VD: [Simpleperf])
-                method_tag = f"[{cpu_method}]" 
-
-                # --- LOGIC ---
-                
-                # 1. Check Script Status
-                if status_lua == "SHUTDOWN" or status_lua == "ERROR":
-                    st = f"Kick / Crash"; status_color = "\033[1;31m"; rejoin = True
-                elif status_lua == "TELEPORT":
-                    st = f"Teleporting..."; status_color = "\033[1;35m"
-                    cls.launch_times[uid] = now - cls.BOOT_GRACE + 60 
-                elif status_lua not in ["UNKNOWN", "ALIVE", ""]:
-                    st = status_lua; status_color = "\033[1;32m"
-                
-                # 2. Check Booting
-                elif (now - lt_launch < cls.BOOT_GRACE):
-                    boot_time = int(now - lt_launch)
-                    st = f"Booting... ({boot_time}s)"; status_color = "\033[1;36m"
-                
-                # 3. Check CPU = 0 (Crash Process)
-                elif pkg_cpu == 0.0:
-                    if (now - last_hb < 20) and (last_hb > 0):
-                        st = f"Joined (Hidden)"; status_color = "\033[1;32m"
+                    # Lấy CPU bằng hàm mới (Simpleperf/Top)
+                    pkg_cpu = get_cpu_usage_shell(pkg)
+                    
+                    st = "\033[1;30mUnknown\033[0m"
+                    rejoin = False
+                    
+                    # 1. LOW CPU CHECK (Ngưỡng 5.0%)
+                    if (now - lt_launch > 30) and (pkg_cpu < 5.0):
+                        if uid not in low_cpu_start:
+                            low_cpu_start[uid] = now
+                        elif now - low_cpu_start[uid] > 30: 
+                            st = f"\033[1;31mFROZEN ({pkg_cpu:.1f}%)\033[0m"
+                            rejoin = True
                     else:
-                        st = f"Crashed (No Process)"; status_color = "\033[1;31m"; rejoin = True
-                
-                # 4. Check Frozen (Ngưỡng mới: < 5%)
-                elif pkg_cpu < 5.0: 
-                    if uid not in cls.low_cpu_start: cls.low_cpu_start[uid] = now
-                    elif now - cls.low_cpu_start[uid] > 90:
-                        st = f"Frozen (<5% CPU)"; status_color = "\033[1;31m"; rejoin = True
-                    else:
-                         if "Connected" in st or "Farming" in st: pass 
-                         else: st = f"Low CPU ({pkg_cpu:.1f}%)"; status_color = "\033[1;33m"
-                else:
-                    if uid in cls.low_cpu_start: del cls.low_cpu_start[uid]
-                    if st == "": st = f"Joined Roblox"
+                        if uid in low_cpu_start: del low_cpu_start[uid]
 
-                # 5. Check Timeout
-                if not rejoin and "Booting" not in st and "Teleport" not in st:
-                    if (now - last_hb > cls.HEARTBEAT_TIMEOUT) and (last_hb > 0):
-                         st = f"No Signal (> {cls.HEARTBEAT_TIMEOUT}s)"; status_color = "\033[1;31m"; rejoin = True
-                    elif last_hb == 0 and "Joined" in st:
-                         st = "Stuck Loading"; status_color = "\033[1;31m"; rejoin = True
+                    if not rejoin:
+                        # 2. HEARTBEAT & STATUS CHECK
+                        if status_lua in ["SHUTDOWN", "ERROR"]:
+                            st = "Kick / Crash"
+                            rejoin = True
+                        
+                        elif status_lua == "TELEPORT":
+                            st = "Teleporting..."
+                            if uid not in cls.teleport_start: cls.teleport_start[uid] = now
+                            
+                            elapsed = int(now - cls.teleport_start[uid])
+                            if elapsed > cls.TELEPORT_MAX_WAIT:
+                                st = "Teleport Stuck"
+                                rejoin = True
+                            else:
+                                # Reset boot time để không bị timeout
+                                cls.launch_times[uid] = now - cls.BOOT_GRACE + 60 
+                        
+                        elif status_lua not in ["UNKNOWN", "ALIVE", ""]:
+                            st = status_lua
+                            if uid in cls.teleport_start: del cls.teleport_start[uid]
 
-                # --- UPDATE STATUS VỚI METHOD TAG ---
-                # Kết quả sẽ là: [Simpleperf] Joined Roblox
-                final_status = f"{method_tag} {st}"
+                        elif (now - lt_launch < cls.BOOT_GRACE):
+                            st = f"Booting... ({int(now - lt_launch)}s)"
+                            if last_hb > 0: st = "Joined Roblox"
+                        
+                        elif pkg_cpu == 0.0:
+                            if (now - last_hb < 20) and (last_hb > 0):
+                                st = "Joined (Hidden)"
+                            else:
+                                st = "Crashed (No Process)"
+                                rejoin = True
+                        
+                        else:
+                            if st == "": st = f"Joined ({pkg_cpu:.1f}%)"
 
-                with status_lock:
-                    globals()["package_statuses"][pkg] = {
-                        "Username": FileManager.get_username(uid),
-                        "Status": f"{status_color}{final_status}\033[0m"
-                    }
+                        # 3. TIMEOUT CHECK
+                        if not rejoin and "Booting" not in st and "Teleport" not in st:
+                            if (now - last_hb > cls.HEARTBEAT_TIMEOUT) and (last_hb > 0):
+                                st = f"No Signal (> {cls.HEARTBEAT_TIMEOUT}s)"
+                                rejoin = True
 
-                if rejoin:
-                    print(f"\033[1;33m[ Shouko.dev ] - Rejoining {pkg}: {st}\033[0m")
-                    try: RobloxManager.kill_roblox(pkg)
-                    except: subprocess.run(['am', 'force-stop', pkg], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    time.sleep(3)
-                    RobloxManager.launch_roblox(pkg, link)
-                    cls.launch_times[uid] = time.time()
-                    if uid in cls.path_cache: del cls.path_cache[uid]
-                    if uid in cls.low_cpu_start: del cls.low_cpu_start[uid]
-                    time.sleep(10)
-            
-            time.sleep(5)
+                    # Màu sắc hiển thị
+                    st_color = "\033[1;32m"
+                    if rejoin: st_color = "\033[1;31m"
+                    elif "Teleport" in st: st_color = "\033[1;35m"
+                    elif "Booting" in st: st_color = "\033[1;36m"
+
+                    with status_lock:
+                        globals()["package_statuses"][pkg] = {
+                            "Username": FileManager.get_username(uid),
+                            "Status": f"{st_color}{st}\033[0m"
+                        }
+                    
+                    if rejoin:
+                        print(f"\033[1;31m[AutoRejoin] {uid} -> Rejoining...\033[0m")
+                        if uid in low_cpu_start: del low_cpu_start[uid]
+                        if uid in cls.teleport_start: del cls.teleport_start[uid]
+                        if pkg in cls.proc_cache: del cls.proc_cache[pkg]
+                        
+                        RobloxManager.kill_roblox_process(pkg)
+                        time.sleep(2)
+                        RobloxManager.launch_roblox(pkg, dict(server_links).get(pkg))
+                        cls.launch_times[uid] = time.time()
+                        time.sleep(5)
+
+                time.sleep(1) # Nghỉ giữa các lần check package
+
+            except Exception: pass
+            time.sleep(5) # Chu kỳ quét
 
     @staticmethod
-    def force_rejoin(server_links, interval, stop_event):
-        while not stop_event.is_set():
-            time.sleep(interval)
-            print("\033[1;36m[ Shouko.dev ] - Scheduled Force Rejoin...\033[0m")
-            for pkg, link in server_links:
-                uid = globals()["_user_"].get(pkg)
-                if uid:
-                    try: RobloxManager.kill_roblox(pkg)
-                    except: pass
-                    time.sleep(2)
-                    RobloxManager.launch_roblox(pkg, link)
-                    Runner.launch_times[uid] = time.time()
-                    time.sleep(10)
+    def force_rejoin(links, interval, stop):
+        start = time.time()
+        while not stop.is_set():
+            if interval != float('inf') and (time.time() - start >= interval):
+                 RobloxManager.kill_roblox_processes(); start = time.time(); time.sleep(5)
+                 Runner.launch_package_sequentially(links)
+            time.sleep(60)
 
     @staticmethod
     def update_status_table_periodically():
         while True:
-            try: Utilities.display_status_table() 
-            except: pass
+            UIManager.update_status_table()
             time.sleep(2)
                             
 def check_activation_status():
