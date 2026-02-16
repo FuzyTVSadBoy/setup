@@ -11,9 +11,9 @@ import traceback
 import random
 import psutil
 import sys
-import re
 import gc
 import os
+import re # Thêm thư viện re để xử lý regex CPU
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
@@ -47,39 +47,41 @@ globals()["_uid_"] = {}
 globals()["_user_"] = {}
 globals()["is_runner_ez"] = False
 globals()["check_exec_enable"] = "1"
+globals()["CPU_METHOD"] = "Init..." # Biến toàn cục hiển thị Mode CPU
 
-globals()["CPU_METHOD"] = "Initializing..."
-
+# --- HÀM LẤY CPU MỚI (SIMPLEPERF + TOP FALLBACK) ---
 try:
+    # Lấy tổng số luồng CPU để chia % cho chuẩn
     TOTAL_CORES = int(subprocess.getoutput("nproc"))
 except:
     TOTAL_CORES = psutil.cpu_count() or 8
 
 def get_cpu_usage_shell(package_name):
-    # CÁCH 1: SIMPLEPERF (Ưu tiên)
+    # CÁCH 1: SIMPLEPERF (Chính xác nhất)
     try:
         cmd = f"su -c '/system/bin/simpleperf stat --app {package_name} --duration 0.5 2>&1'"
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
         output = result.stdout
         
-        # Regex tìm "CPUs utilized"
+        # Regex tìm "CPUs utilized" (Format mới của simpleperf)
         match_cpu = re.search(r'(\d+(\.\d+)?)\s+CPUs utilized', output)
         if match_cpu:
             cpus_used = float(match_cpu.group(1))
             final_cpu = (cpus_used / TOTAL_CORES) * 100
-            globals()["CPU_METHOD"] = "Simpleperf (Native)" 
-            return round(final_cpu, 2)
+            globals()["CPU_METHOD"] = "Simpleperf" 
+            return round(final_cpu, 1)
             
-        # Fallback task-clock
+        # Regex tìm "task-clock" (Format cũ)
         match_task = re.search(r'(\d+(\.\d+)?)\s+task-clock', output)
         if match_task:
             task_clock_ms = float(match_task.group(1))
+            # 0.5s duration = 500ms
             final_cpu = (task_clock_ms / (500 * TOTAL_CORES)) * 100
-            globals()["CPU_METHOD"] = "Simpleperf (Clock)"
-            return round(final_cpu, 2)
+            globals()["CPU_METHOD"] = "Simpleperf"
+            return round(final_cpu, 1)
     except: pass
 
-    # CÁCH 2: TOP (Fallback)
+    # CÁCH 2: TOP (Fallback an toàn)
     try:
         cmd = f"top -n 1 -b | grep {package_name}"
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
@@ -94,10 +96,11 @@ def get_cpu_usage_shell(package_name):
                             try:
                                 raw_val = float(clean_part)
                                 normalized_val = raw_val / TOTAL_CORES
-                                globals()["CPU_METHOD"] = "Top (Fallback)"
-                                return round(normalized_val, 2)
+                                globals()["CPU_METHOD"] = "Top"
+                                return round(normalized_val, 1)
                             except: continue
     except: pass
+    
     return 0.0
 
 executors = {
@@ -412,11 +415,6 @@ class Utilities:
         expiry_datetime = datetime.fromtimestamp(expiry_timestamp / 1000, pytz.utc)
         expiry_datetime = expiry_datetime.astimezone(ho_chi_minh_tz)
         return expiry_datetime.strftime("%Y-%m-%d %H:%M:%S")
-
-    # FIX CRASH: Thêm hàm display_status_table để tương thích
-    @staticmethod
-    def display_status_table():
-        UIManager.update_status_table()
 
 class FileManager:
     SERVER_LINKS_FILE = "Shouko.dev/server-link.txt"
@@ -926,9 +924,6 @@ class RobloxManager:
         except subprocess.CalledProcessError as e:
             print(f"\033[1;31m[ Shouko.dev ] - Error killing process for {package_name}: {e}\033[0m")
             Utilities.log_error(f"Error killing process for {package_name}: {e}")
-    
-    # ALIAS CHO RUNNER MỚI
-    kill_roblox = kill_roblox_process
 
     @staticmethod
     def delete_cache_for_package(package_name):
@@ -1221,12 +1216,14 @@ class UIManager:
 
         config_file = os.path.join("Shouko.dev", "config.json")
         check_executor = "1"
+        
         if os.path.exists(config_file):
             try:
                 with open(config_file, "r") as f:
                     config = json.load(f)
                     check_executor = config.get("check_executor", "0")
-            except: pass
+            except Exception as e:
+                console.print(f"[bold red][ Shouko.dev ] - Error reading {config_file}: {e}[/bold red]")
 
         console.print(header)
         console.print(f"[bold yellow]- Version: [/bold yellow][bold white]{version}[/bold white]")
@@ -1236,25 +1233,38 @@ class UIManager:
             console.print("[bold yellow]- Method: [/bold yellow][bold white]Check Executor[/bold white]")
         else:
             console.print("[bold yellow]- Method: [/bold yellow][bold white]Check Online[/bold white]")
+        
         console.print("\n")
 
     @staticmethod
     def create_dynamic_menu(options):
         console = Console()
-        table = Table(header_style="bold white", border_style="bright_white", box=ROUNDED)
+
+        table = Table(
+            header_style="bold white",
+            border_style="bright_white",
+            box=ROUNDED
+        )
         table.add_column("No", justify="center", style="bold cyan", width=6)
         table.add_column("Service Name", style="bold magenta", justify="left")
 
         for i, service in enumerate(options, start=1):
             table.add_row(f"[bold yellow][ {i} ][/bold yellow]", f"[bold blue]{service}[/bold blue]")
 
-        panel = Panel(table, title="[bold yellow]Menu[/bold yellow]", border_style="yellow", box=ROUNDED)
+        panel = Panel(
+            table,
+            title="[bold yellow]discord.gg/ghmaDgNzDa - Beta Edition[/bold yellow]",
+            border_style="yellow",
+            box=ROUNDED
+        )
+
         console.print(Align.left(panel))
 
     @staticmethod
     def create_dynamic_table(headers, rows):
         table = PrettyTable(field_names=headers, border=True, align="l")
-        for huy in rows: table.add_row(list(huy))
+        for huy in rows:
+            table.add_row(list(huy))
         print(table)
 
     last_update_time = 0
@@ -1262,17 +1272,18 @@ class UIManager:
 
     @staticmethod
     def update_status_table():
-        if time.time() - UIManager.last_update_time < UIManager.update_interval: return
+        current_time = time.time()
+        if current_time - UIManager.last_update_time < UIManager.update_interval:
+            return
         
         cpu_usage = psutil.cpu_percent(interval=None)
         memory_info = psutil.virtual_memory()
         ram = round(memory_info.used / memory_info.total * 100, 2)
         
-        # CHỈ THÊM MODE VÀO ĐÂY
+        # HIỂN THỊ CHẾ ĐỘ CHECK CPU Ở ĐÂY
         method = globals().get("CPU_METHOD", "Unknown")
         title = f"CPU: {cpu_usage}% | RAM: {ram}% | Mode: {method}"
 
-        # CẤU TRÚC BẢNG GỐC 3 CỘT
         table_packages = PrettyTable(
             field_names=["Package", "Username", "Package Status"],
             title=title,
@@ -1280,11 +1291,11 @@ class UIManager:
             align="l"
         )
 
-        # Dùng list() để tránh crash, còn lại giữ nguyên
+        # Fix Crash: Thêm list()
         for package, info in list(globals().get("package_statuses", {}).items()):
             username = str(info.get("Username", "Unknown"))
+
             if username != "Unknown":
-                # Logic che tên gốc
                 obfuscated_username = "******" + username[6:] if len(username) > 6 else "******"
                 username = obfuscated_username
 
@@ -1304,7 +1315,7 @@ class ExecutorManager:
     def get_new_delta_paths():
         """
         Tìm các đường dẫn cài đặt của Delta (New) trong Android/data.
-        Fix: Sửa 'gloob' thành 'gloop' và thêm check thư mục 'etc'.
+        Fix: Sửa ' gloop' thành 'gloop' và thêm check thư mục 'etc'.
         """
         new_paths = []
         try:
@@ -1532,41 +1543,46 @@ class ExecutorManager:
             pass
 
 class Runner:
-    BOOT_GRACE = 300       
-    HEARTBEAT_TIMEOUT = 15 
-    TELEPORT_MAX_WAIT = 60 
+    BOOT_GRACE = 300       # 5 phút
+    HEARTBEAT_TIMEOUT = 15 # 15s timeout
+    TELEPORT_MAX_WAIT = 60 # 60s chờ teleport
     
-    launch_times = {}      
-    proc_cache = {}        
-    path_cache = {}        
-    teleport_start = {}    
+    launch_times = {}      # Lưu thời gian launch
+    proc_cache = {}        # Cache process CPU
+    path_cache = {}        # Cache đường dẫn file
+    teleport_start = {}    # Lưu thời điểm bắt đầu Teleport
 
     @classmethod
     def get_heartbeat_status(cls, user_id):
         filename = f"heartbeat_{user_id}.txt"
         file_path_found = None
         
-        # Logic tìm file cũ (Giữ nguyên)
+        # 1. Tìm trong Cache (Nhanh nhất)
         if user_id in cls.path_cache:
-            if os.path.exists(cls.path_cache[user_id]): file_path_found = cls.path_cache[user_id]
+            if os.path.exists(cls.path_cache[user_id]):
+                file_path_found = cls.path_cache[user_id]
             else: del cls.path_cache[user_id]
 
+        # 2. Tìm trực tiếp trong Delta (gloop) - QUAN TRỌNG
         if not file_path_found:
             target_pkg = None
             for pkg, uid in globals().get("_user_", {}).items():
                 if str(uid) == str(user_id): target_pkg = pkg; break
+            
             if target_pkg:
                 potential_paths = [
                     f"/sdcard/Android/data/{target_pkg}/files/gloop/external/Workspace/{filename}",
                     f"/sdcard/Android/data/{target_pkg}/files/gloop/external/workspace/{filename}"
                 ]
                 for p in potential_paths:
-                    if os.path.exists(p): file_path_found = p; cls.path_cache[user_id] = p; break
+                    if os.path.exists(p):
+                        file_path_found = p; cls.path_cache[user_id] = p; break
 
         if not file_path_found:
             for ws in globals().get("workspace_paths", []):
                 path = os.path.join(ws, filename)
-                if os.path.exists(path): cls.path_cache[user_id] = path; file_path_found = path; break
+                if os.path.exists(path):
+                    cls.path_cache[user_id] = path; file_path_found = path; break
         
         data = {"status": "UNKNOWN", "time": 0}
         if file_path_found:
@@ -1575,7 +1591,7 @@ class Runner:
                     content = f.read().strip()
                     if "|" in content:
                         parts = content.split("|")
-                        data["status"] = parts[0] # LẤY NGUYÊN VĂN CHỮ TRONG FILE
+                        data["status"] = parts[0] # Lấy nguyên văn status (VD: Script Connected)
                         try: data["time"] = int(float(parts[1]))
                         except: data["time"] = 0
                     else:
@@ -1584,6 +1600,7 @@ class Runner:
                 try: os.remove(file_path_found)
                 except: pass
             except: pass
+            
         return data
 
     @classmethod
@@ -1597,15 +1614,18 @@ class Runner:
         for pkg, link in server_links:
             uid = globals()["_user_"].get(pkg)
             if not uid: continue
+            
             if pkg in cls.proc_cache: del cls.proc_cache[pkg]
             if uid in cls.path_cache: del cls.path_cache[uid]
             if uid in cls.teleport_start: del cls.teleport_start[uid]
 
+            # MÀU GỐC: Launching là màu Vàng
             with status_lock:
                 globals()["package_statuses"][pkg] = {
                     "Username": FileManager.get_username(uid),
                     "Status": "\033[1;33mLaunching...\033[0m"
                 }
+            
             print(f"\033[1;32m[ Shouko.dev ] - Launching: {pkg}\033[0m")
             RobloxManager.launch_roblox(pkg, link)
             cls.launch_times[uid] = time.time()
@@ -1613,84 +1633,95 @@ class Runner:
 
     @classmethod
     def monitor_presence(cls, server_links, stop_event):
+        print("\033[1;36m[ Runner ] - Monitor Active (Hybrid CPU Check)...\033[0m")
         low_cpu_start = {}
+
         while not stop_event.is_set():
             try:
                 now = time.time()
+                
                 for pkg, _ in server_links:
                     uid = globals()["_user_"].get(pkg)
                     if not uid: continue
                     
                     hb_data = cls.get_heartbeat_status(uid)
                     last_hb = hb_data["time"]
-                    status_lua = hb_data["status"] # CHÍNH LÀ CHỮ "Script Connected"
+                    status_lua = hb_data["status"]
                     lt_launch = cls.launch_times.get(uid, 0)
                     
                     if lt_launch == 0: continue
 
-                    # Lấy CPU từ Simpleperf
                     pkg_cpu = get_cpu_usage_shell(pkg)
                     
                     st = ""
                     rejoin = False
                     
-                    # 1. CHECK FROZEN (5%)
+                    # BIẾN MÀU SẮC (Mặc định là Xanh Lá)
+                    final_color = "\033[1;32m" 
+
+                    # 1. FROZEN CHECK
                     if (now - lt_launch > 30) and (pkg_cpu < 5.0):
                         if uid not in low_cpu_start: low_cpu_start[uid] = now
                         elif now - low_cpu_start[uid] > 30: 
-                            st = f"FROZEN (CPU: {pkg_cpu:.1f}%)"
-                            rejoin = True
+                            st = "FROZEN"; rejoin = True; final_color = "\033[1;31m" # Đỏ
                     else:
                         if uid in low_cpu_start: del low_cpu_start[uid]
 
                     if not rejoin:
-                        # 2. ƯU TIÊN HIỂN THỊ STATUS TỪ SCRIPT GỬI VỀ
+                        # 2. STATUS CHECK
                         if status_lua in ["SHUTDOWN", "ERROR"]:
-                            st = f"Kick / Crash (CPU: {pkg_cpu:.1f}%)"; rejoin = True
+                            st = "Kick / Crash"; rejoin = True; final_color = "\033[1;31m" # Đỏ
                         
                         elif status_lua == "TELEPORT":
-                            st = f"Teleporting... (CPU: {pkg_cpu:.1f}%)"
+                            st = "Teleporting..."
+                            final_color = "\033[1;35m" # Tím (Màu gốc)
                             if uid not in cls.teleport_start: cls.teleport_start[uid] = now
                             if now - cls.teleport_start[uid] > cls.TELEPORT_MAX_WAIT:
-                                st = "Teleport Stuck"; rejoin = True
+                                st = "Teleport Stuck"; rejoin = True; final_color = "\033[1;31m"
                             else: cls.launch_times[uid] = now - cls.BOOT_GRACE + 60 
                         
                         elif status_lua not in ["UNKNOWN", "ALIVE", ""]:
-                            # QUAN TRỌNG: Nếu file ghi "Script Connected", hiện "Script Connected"
-                            # Nối thêm CPU vào đít
-                            st = f"{status_lua} | CPU: {pkg_cpu:.1f}%"
+                            st = status_lua # Hiện nguyên văn (Script Connected...)
+                            final_color = "\033[1;32m" # Xanh lá
                             if uid in cls.teleport_start: del cls.teleport_start[uid]
-                        
-                        # 3. NẾU KHÔNG CÓ STATUS TỪ SCRIPT -> CHECK BOOT/JOINED
+
                         elif (now - lt_launch < cls.BOOT_GRACE):
-                            st = f"Booting... {int(now - lt_launch)}s | CPU: {pkg_cpu:.1f}%"
-                            if last_hb > 0: st = f"Joined Roblox | CPU: {pkg_cpu:.1f}%"
+                            st = f"Booting... {int(now - lt_launch)}s"
+                            final_color = "\033[1;33m" # Vàng (Màu gốc chuẩn)
+                            if last_hb > 0: 
+                                st = "Joined Roblox"
+                                final_color = "\033[1;32m" # Xanh lá
                         
                         elif pkg_cpu == 0.0:
-                            if (now - last_hb < 20) and (last_hb > 0): st = "Joined (Hidden)"
-                            else: st = "Crashed (No Process)"; rejoin = True
-                        
+                            if (now - last_hb < 20) and (last_hb > 0): 
+                                st = "Joined (Hidden)"
+                                final_color = "\033[1;32m"
+                            else: 
+                                st = "Crashed (No Process)"
+                                rejoin = True
+                                final_color = "\033[1;31m"
                         else:
-                            st = f"Joined | CPU: {pkg_cpu:.1f}%"
+                            st = "Joined Roblox"
+                            final_color = "\033[1;32m"
 
-                        # 4. TIMEOUT
                         if not rejoin and "Booting" not in st and "Teleport" not in st:
                             if (now - last_hb > cls.HEARTBEAT_TIMEOUT) and (last_hb > 0):
-                                st = f"No Signal > {cls.HEARTBEAT_TIMEOUT}s"; rejoin = True
+                                st = f"No Signal > {cls.HEARTBEAT_TIMEOUT}s"
+                                rejoin = True
+                                final_color = "\033[1;31m"
 
-                    # MÀU SẮC (GIỮ NGUYÊN)
-                    st_color = "\033[1;32m"
-                    if rejoin: st_color = "\033[1;31m"
-                    elif "Teleport" in st: st_color = "\033[1;35m"
-                    elif "Booting" in st: st_color = "\033[1;36m"
+                    # 3. GHÉP CHUỖI VÀ MÀU (TUÂN THỦ FILE GỐC)
+                    # Status = Màu + Text + Reset + Info CPU (để CPU màu trắng hoặc theo màu status tùy ý)
+                    full_status = f"{final_color}{st} | CPU: {pkg_cpu:.1f}%\033[0m"
 
                     with status_lock:
                         globals()["package_statuses"][pkg] = {
                             "Username": FileManager.get_username(uid),
-                            "Status": f"{st_color}{st}\033[0m"
+                            "Status": full_status
                         }
                     
                     if rejoin:
+                        print(f"\033[1;31m[AutoRejoin] {uid} -> Rejoining...\033[0m")
                         RobloxManager.kill_roblox_process(pkg)
                         time.sleep(2)
                         RobloxManager.launch_roblox(pkg, dict(server_links).get(pkg))
@@ -1715,7 +1746,7 @@ class Runner:
         while True:
             UIManager.update_status_table()
             time.sleep(2)
-                            
+
 def check_activation_status():
     try:
         response = requests.get("https://raw.githubusercontent.com/nghvit/module/refs/heads/main/status/customize", timeout=5)
@@ -1765,7 +1796,6 @@ def main():
         globals()["check_exec_enable"] = "1"
         globals()["lua_script_template"] = LUA_NEW
         
-        # Tự động tạo file checkui.lua
         try:
             os.makedirs("Shouko.dev", exist_ok=True)
             with open("Shouko.dev/checkui.lua", "w") as f:
@@ -1949,8 +1979,6 @@ def main():
             input("\033[1;32mPress Enter to return...\033[0m")
             continue
 
-            
-                                    
         elif setup_type == "6":
             try:
                 current_prefix = globals().get("package_prefix", "com.roblox")
@@ -2001,12 +2029,10 @@ def main():
                 if not script_content:
                     print("\033[1;31m[ Shouko.dev ] - Empty script. Cancelled.\033[0m")
                 else:
-                    # Lưu file nguồn
                     os.makedirs("Shouko.dev", exist_ok=True)
                     with open("Shouko.dev/custom_script.txt", "w", encoding="utf-8") as f:
                         f.write(script_content)
                     
-                    # 1. Cài đặt vào Executor CŨ (Giữ nguyên)
                     detected = ExecutorManager.detect_executors()
                     if detected:
                         for exec_name in detected:
@@ -2027,14 +2053,12 @@ def main():
                                             break
                                         except: pass
                     
-                    # 2. Cài đặt vào Executor MỚI (FIXED)
                     new_delta_paths = ExecutorManager.get_new_delta_paths()
                     if new_delta_paths:
                          for base_path in new_delta_paths:
-                            # base_path: .../external/
                             target_subs = ["Autoexec", "autoexec", "Autoexecute"]
                             for sub in target_subs:
-                                target_dir = os.path.join(base_path, sub) # .../external/autoexec
+                                target_dir = os.path.join(base_path, sub) 
                                 if os.path.exists(target_dir):
                                     try:
                                         with open(os.path.join(target_dir, "z_custom.txt"), "w", encoding="utf-8") as f:
