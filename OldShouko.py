@@ -11,6 +11,7 @@ import traceback
 import random
 import psutil
 import sys
+import re
 import gc
 import os
 from rich.table import Table
@@ -46,6 +47,51 @@ globals()["_uid_"] = {}
 globals()["_user_"] = {}
 globals()["is_runner_ez"] = False
 globals()["check_exec_enable"] = "1"
+
+try:
+    TOTAL_CORES = int(subprocess.getoutput("nproc"))
+except:
+    TOTAL_CORES = psutil.cpu_count() or 8
+
+def get_cpu_usage_shell(package_name):
+    try:
+        cmd = f"su -c '/system/bin/simpleperf stat --app {package_name} --duration 0.5 2>&1'"
+        
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        output = result.stdout
+        match_cpu = re.search(r'(\d+(\.\d+)?)\s+CPUs utilized', output)
+        
+        if match_cpu:
+            cpus_used = float(match_cpu.group(1))
+            final_cpu = (cpus_used / TOTAL_CORES) * 100
+            return round(final_cpu, 2)
+        match_task = re.search(r'(\d+(\.\d+)?)\s+task-clock', output)
+        if match_task:
+            task_clock_ms = float(match_task.group(1))
+            final_cpu = (task_clock_ms / (500 * TOTAL_CORES)) * 100
+            return round(final_cpu, 2)
+
+    except Exception:
+        pass
+    try:
+        cmd = f"top -n 1 -b | grep {package_name}"
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        
+        if result.stdout:
+            lines = result.stdout.strip().split('\n')
+            for line in lines:
+                if package_name in line:
+                    parts = line.split()
+                    for part in parts:
+                        clean_part = part.replace('%', '')
+                        if '.' in clean_part and clean_part.replace('.', '').isdigit():
+                            try:
+                                raw_val = float(clean_part)
+                                normalized_val = raw_val / TOTAL_CORES
+                                return round(normalized_val, 2)
+                            except: continue
+        return 0.0
+    except: return 0.0
 
 executors = {
     "Fluxus": "/storage/emulated/0/Fluxus/",
@@ -280,7 +326,7 @@ def find_all_workspaces():
             for line in result.stdout.strip().splitlines():
                 pkg = line.strip()
                 if pkg:
-                    # Đường dẫn gốc của Delta (Sửa  gloop -> gloop)
+                    # Đường dẫn gốc của Delta (Sửa gloob -> gloop)
                     # Delta có thể lưu ở external hoặc external/etc, ta thêm cả 2 cho chắc
                     delta_paths = [
                         f"/sdcard/Android/data/{pkg}/files/gloop/external/",
@@ -359,6 +405,11 @@ class Utilities:
         expiry_datetime = datetime.fromtimestamp(expiry_timestamp / 1000, pytz.utc)
         expiry_datetime = expiry_datetime.astimezone(ho_chi_minh_tz)
         return expiry_datetime.strftime("%Y-%m-%d %H:%M:%S")
+
+    # FIX CRASH: Thêm hàm display_status_table để tương thích
+    @staticmethod
+    def display_status_table():
+        UIManager.update_status_table()
 
 class FileManager:
     SERVER_LINKS_FILE = "Shouko.dev/server-link.txt"
@@ -868,6 +919,9 @@ class RobloxManager:
         except subprocess.CalledProcessError as e:
             print(f"\033[1;31m[ Shouko.dev ] - Error killing process for {package_name}: {e}\033[0m")
             Utilities.log_error(f"Error killing process for {package_name}: {e}")
+    
+    # ALIAS CHO RUNNER MỚI
+    kill_roblox = kill_roblox_process
 
     @staticmethod
     def delete_cache_for_package(package_name):
@@ -1150,8 +1204,8 @@ class UIManager:
     def print_header(version):
         console = Console()
         header = Text(r"""
-      _                   _             _          
-     | |                 | |           | |          
+     _                 _             _          
+    | |               | |           | |          
  ___| |__   ___  _   _| | _____   __| | _____   __
 / __| '_ \ / _ \| | | | |/ / _ \ / _` |/ _ \ \ / /
 \__ \ | | | (_) | |_| |   < (_) | (_| |  __/\ V / 
@@ -1232,7 +1286,8 @@ class UIManager:
             align="l"
         )
 
-        for package, info in globals().get("package_statuses", {}).items():
+        # FIX CRASH: Thêm list() để tránh lỗi RuntimeError dictionary changed size
+        for package, info in list(globals().get("package_statuses", {}).items()):
             username = str(info.get("Username", "Unknown"))
 
             if username != "Unknown":
@@ -1254,7 +1309,7 @@ class ExecutorManager:
     def get_new_delta_paths():
         """
         Tìm các đường dẫn cài đặt của Delta (New) trong Android/data.
-        Fix: Sửa ' gloop' thành 'gloop' và thêm check thư mục 'etc'.
+        Fix: Sửa 'gloob' thành 'gloop' và thêm check thư mục 'etc'.
         """
         new_paths = []
         try:
@@ -1491,40 +1546,8 @@ class Runner:
     path_cache = {}        # Cache đường dẫn file
     teleport_start = {}    # Lưu thời điểm bắt đầu Teleport
 
-    @classmethod
-    def get_package_cpu(cls, package_name):
-        total_cpu = 0.0
-        try:
-            # Tìm process cha
-            parent = None
-            if package_name in cls.proc_cache:
-                parent = cls.proc_cache[package_name]
-            
-            # Nếu cache lỗi hoặc chưa có, tìm lại
-            if not parent or not parent.is_running():
-                for p in psutil.process_iter(['name', 'cmdline']):
-                    try:
-                        if package_name in (p.info['cmdline'] or []) or package_name in (p.info['name'] or ''):
-                            parent = p
-                            cls.proc_cache[package_name] = p
-                            break
-                    except: continue
-            
-            if parent:
-                # Cộng CPU của cha
-                total_cpu += parent.cpu_percent(interval=0.1)
-                
-                # Cộng CPU của tất cả con cái (Children)
-                for child in parent.children(recursive=True):
-                    try:
-                        total_cpu += child.cpu_percent(interval=0.1)
-                    except: pass
-                    
-        except: pass
-        
-        # Làm tròn 1 chữ số
-        return round(total_cpu, 1)
-
+    # ĐÃ THAY THẾ get_package_cpu BẰNG HÀM get_cpu_usage_shell Ở TRÊN ĐỂ DÙNG SIMPLEPERF
+    
     @classmethod
     def get_heartbeat_status(cls, user_id):
         filename = f"heartbeat_{user_id}.txt"
@@ -1619,7 +1642,7 @@ class Runner:
 
     @classmethod
     def monitor_presence(cls, server_links, stop_event):
-        print("\033[1;36m[ Runner ] - Monitor V17 (Anti-False Kill)...\033[0m")
+        print("\033[1;36m[ Runner ] - Monitor V17 (Anti-False Kill) with Simpleperf...\033[0m")
         low_cpu_start = {}
 
         while not stop_event.is_set():
@@ -1637,7 +1660,9 @@ class Runner:
                     
                     st = "\033[1;30mUnknown\033[0m"
                     rejoin = False
-                    pkg_cpu = cls.get_package_cpu(pkg)
+                    
+                    # DÙNG HÀM MỚI get_cpu_usage_shell (Simpleperf)
+                    pkg_cpu = get_cpu_usage_shell(pkg)
                     
                     # 1. LOW CPU CHECK (Nới lỏng để tránh kill oan)
                     # Chỉ check sau 30s khởi động
@@ -1724,7 +1749,10 @@ class Runner:
 
     @staticmethod
     def update_status_table_periodically():
-        while True: UIManager.update_status_table(); time.sleep(2)
+        while True: 
+            # DÙNG UI GỐC, KHÔNG VẼ BẢNG MỚI
+            UIManager.update_status_table()
+            time.sleep(2)
                             
 def check_activation_status():
     try:
