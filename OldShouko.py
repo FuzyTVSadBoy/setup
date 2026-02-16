@@ -1559,9 +1559,9 @@ class ExecutorManager:
             pass
 
 class Runner:
-    BOOT_GRACE = 300       # Thời gian tối đa cho 1 lượt chạy (5 phút)
-    SCRIPT_TIMEOUT = 60    # [MỚI] Thời gian chờ Script chạy. Quá 60s không thấy file -> KILL
-    HEARTBEAT_TIMEOUT = 15 # Mất tín hiệu 15s -> KILL
+    BOOT_GRACE = 300       
+    SCRIPT_TIMEOUT = 60 
+    HEARTBEAT_TIMEOUT = 15 
     TELEPORT_MAX_WAIT = 60 
     
     launch_times = {}      
@@ -1580,7 +1580,7 @@ class Runner:
                 file_path_found = cls.path_cache[user_id]
             else: del cls.path_cache[user_id]
 
-        # 2. Tìm trong Delta Path (gloop)
+        # 2. Tìm trong Delta Path
         if not file_path_found:
             target_pkg = None
             for pkg, uid in globals().get("_user_", {}).items():
@@ -1591,8 +1591,7 @@ class Runner:
                     f"/sdcard/Android/data/{target_pkg}/files/gloop/external/workspace/{filename}"
                 ]
                 for p in potential_paths:
-                    if os.path.exists(p):
-                        file_path_found = p; cls.path_cache[user_id] = p; break
+                    if os.path.exists(p): file_path_found = p; cls.path_cache[user_id] = p; break
 
         # 3. Tìm trong Workspace chung
         if not file_path_found:
@@ -1607,10 +1606,11 @@ class Runner:
                     content = f.read().strip()
                     if "|" in content:
                         parts = content.split("|")
-                        data["status"] = parts[0]
+                        data["status"] = parts[0].strip() # Lấy từ khóa: ALIVE, TELEPORT...
                         try: data["time"] = int(float(parts[1]))
                         except: data["time"] = 0
                     else:
+                        # Fallback nếu file lỗi format
                         data["status"] = content if content else "ALIVE"
                         data["time"] = int(time.time())
                 try: os.remove(file_path_found)
@@ -1634,7 +1634,7 @@ class Runner:
             if uid in cls.path_cache: del cls.path_cache[uid]
             if uid in cls.teleport_start: del cls.teleport_start[uid]
 
-            # Xóa file cũ để tránh đọc nhầm
+            # Xóa file cũ
             for ws in globals().get("workspace_paths", []):
                 try: os.remove(os.path.join(ws, f"heartbeat_{uid}.txt"))
                 except: pass
@@ -1651,7 +1651,9 @@ class Runner:
 
     @classmethod
     def monitor_presence(cls, server_links, stop_event):
+        print("\033[1;36m[ Runner ] - Monitor Active (Translating Status)...\033[0m")
         low_cpu_start = {}
+
         while not stop_event.is_set():
             try:
                 now = time.time()
@@ -1661,7 +1663,7 @@ class Runner:
                     
                     hb_data = cls.get_heartbeat_status(uid)
                     last_hb = hb_data["time"]
-                    status_lua = hb_data["status"]
+                    raw_status = hb_data["status"] # Đây là ALIVE, TELEPORT...
                     lt_launch = cls.launch_times.get(uid, 0)
                     
                     if lt_launch == 0: continue
@@ -1669,67 +1671,73 @@ class Runner:
                     pkg_cpu = get_cpu_usage_shell(pkg)
                     st = ""
                     rejoin = False
-                    
-                    # 1. LOW CPU CHECK (Ngưỡng 5%)
+                    final_color = "\033[1;32m" 
+
+                    # 1. LOW CPU CHECK
                     if (now - lt_launch > 30) and (pkg_cpu < 5.0):
                         if uid not in low_cpu_start: low_cpu_start[uid] = now
                         elif now - low_cpu_start[uid] > 30: 
-                            st = f"FROZEN (CPU: {pkg_cpu:.1f}%)"
-                            rejoin = True
+                            st = f"FROZEN (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
                     else:
                         if uid in low_cpu_start: del low_cpu_start[uid]
 
                     if not rejoin:
-                        # 2. XỬ LÝ HEARTBEAT
-                        if status_lua in ["SHUTDOWN", "ERROR"]:
-                            st = f"Kick / Crash (CPU: {pkg_cpu:.1f}%)"; rejoin = True
+                        # --- 2. LOGIC DỊCH THUẬT TRẠNG THÁI ---
                         
-                        elif status_lua == "TELEPORT":
-                            st = f"Teleporting... (CPU: {pkg_cpu:.1f}%)"
+                        # Case 1: Script báo SHUTDOWN
+                        if raw_status in ["SHUTDOWN", "ERROR"]:
+                            st = f"Kick / Crash (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
+                        
+                        # Case 2: Script báo TELEPORT
+                        elif raw_status == "TELEPORT":
+                            st = f"Teleporting... (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;35m"
                             if uid not in cls.teleport_start: cls.teleport_start[uid] = now
                             if now - cls.teleport_start[uid] > cls.TELEPORT_MAX_WAIT:
-                                st = "Teleport Stuck"; rejoin = True
+                                st = f"Teleport Stuck (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
                             else: cls.launch_times[uid] = now - cls.BOOT_GRACE + 60 
                         
-                        elif status_lua not in ["UNKNOWN", "ALIVE", ""]:
-                            st = f"{status_lua} | CPU: {pkg_cpu:.1f}%"
+                        # Case 3: Script báo TELEPORT_FAIL
+                        elif raw_status == "TELEPORT_FAIL":
+                            st = f"Teleport Failed (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;33m" # Vàng
+
+                        # Case 4: Script báo ALIVE -> Dịch thành "Script Connected"
+                        elif raw_status == "ALIVE":
+                            st = f"Script Connected (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;32m" # Xanh
                             if uid in cls.teleport_start: del cls.teleport_start[uid]
 
-                        # 3. CHECK TIMEOUT CHO SCRIPT (LOGIC MỚI BẠN YÊU CẦU)
-                        # Nếu đã chạy quá 60s mà chưa từng nhận được file heartbeat nào (last_hb == 0)
-                        elif (now - lt_launch > cls.SCRIPT_TIMEOUT) and (last_hb == 0):
-                            st = f"Script Error / No File (CPU: {pkg_cpu:.1f}%)"
-                            rejoin = True
+                        # Case 5: Script báo Status lạ (Custom từ user)
+                        elif raw_status not in ["UNKNOWN", ""]:
+                            st = f"{raw_status} (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;32m"
 
-                        # 4. TRẠNG THÁI BOOTING (Chưa quá timeout)
-                        elif (now - lt_launch < cls.BOOT_GRACE):
-                            if last_hb > 0: 
-                                st = f"Joined Roblox | CPU: {pkg_cpu:.1f}%"
-                            else:
-                                st = f"Booting... {int(now - lt_launch)}s | CPU: {pkg_cpu:.1f}%"
+                        # --- 3. CÁC TRẠNG THÁI MẶC ĐỊNH KHI CHƯA CÓ FILE ---
                         
+                        # Check Timeout (Nếu chạy quá lâu mà chưa có file)
+                        elif (now - lt_launch > cls.SCRIPT_TIMEOUT) and (last_hb == 0):
+                            st = f"Script Error / No File (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
+
+                        # Đang Booting
+                        elif (now - lt_launch < cls.BOOT_GRACE):
+                            if last_hb > 0: st = f"Joined Roblox (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;32m"
+                            else: st = f"Booting... {int(now - lt_launch)}s (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;33m"
+                        
+                        # Crash kín (No process)
                         elif pkg_cpu == 0.0:
-                            if (now - last_hb < 20) and (last_hb > 0): st = "Joined (Hidden)"
-                            else: st = "Crashed (No Process)"; rejoin = True
+                            if (now - last_hb < 20) and (last_hb > 0): st = "Joined (Hidden)"; final_color = "\033[1;32m"
+                            else: st = "Crashed (No Process)"; rejoin = True; final_color = "\033[1;31m"
                         
                         else:
-                            st = f"Joined | CPU: {pkg_cpu:.1f}%"
+                            st = f"Joined (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;32m"
 
-                        # 5. CHECK MẤT TÍN HIỆU (Đã từng có file, giờ mất)
-                        if not rejoin and "Booting" not in st and "Teleport" not in st:
+                        # 4. TIMEOUT (Đã từng có file nhưng giờ mất)
+                        if not rejoin and "Booting" not in st and "Teleport" not in st and "Script Timeout" not in st:
                             if (now - last_hb > cls.HEARTBEAT_TIMEOUT) and (last_hb > 0):
-                                st = f"No Signal > {cls.HEARTBEAT_TIMEOUT}s"; rejoin = True
+                                st = f"No Signal > {cls.HEARTBEAT_TIMEOUT}s (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
 
-                    # MÀU SẮC CHUẨN FILE GỐC
-                    st_color = "\033[1;32m"
-                    if rejoin: st_color = "\033[1;31m" # Đỏ
-                    elif "Teleport" in st: st_color = "\033[1;35m" # Tím
-                    elif "Booting" in st: st_color = "\033[1;33m" # Vàng (Đã sửa lại)
-
+                    full_status = f"{final_color}{st}\033[0m"
                     with status_lock:
                         globals()["package_statuses"][pkg] = {
                             "Username": FileManager.get_username(uid),
-                            "Status": f"{st_color}{st}\033[0m"
+                            "Status": full_status
                         }
                     
                     if rejoin:
@@ -1805,7 +1813,6 @@ def main():
     if not globals().get("command_8_configured", False):
         globals()["check_exec_enable"] = "1"
         
-        # 1. Khai báo Script Lua mới (Logic Heartbeat an toàn)
         LUA_NEW = r"""
 local Plr = game:GetService("Players").LocalPlayer
 repeat task.wait() until Plr
@@ -1813,7 +1820,6 @@ local FILE = "heartbeat_"..tostring(Plr.UserId)..".txt"
 local TS = game:GetService("TeleportService")
 local isTp = false
 
--- Hàm ghi file an toàn (Chống crash script)
 local function log(status)
     pcall(function()
         if writefile then
@@ -1822,10 +1828,9 @@ local function log(status)
     end)
 end
 
--- Ghi file ngay lập tức để tool biết Executor đã hoạt động
-log("Script Connected")
+-- Ghi trạng thái khởi đầu (Dùng từ khóa ALIVE)
+log("ALIVE")
 
--- Vòng lặp gửi heartbeat
 task.spawn(function()
     while true do
         task.wait(2)
@@ -1833,10 +1838,8 @@ task.spawn(function()
     end
 end)
 
--- Bắt sự kiện Teleport/Kick
 Plr.OnTeleport:Connect(function() isTp = true; log("TELEPORT") end)
 TS.TeleportInitFailed:Connect(function() isTp = false; log("TELEPORT_FAIL") end)
-
 game:GetService("Players").PlayerRemoving:Connect(function(p)
     if p == Plr then log("SHUTDOWN") end
 end)
