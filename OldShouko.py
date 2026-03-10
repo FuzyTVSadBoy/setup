@@ -996,8 +996,8 @@ class RobloxManager:
     @staticmethod
     def inject_cookies_and_appstorage():
         RobloxManager.kill_roblox_processes()
-        db_url = "https://raw.githubusercontent.com/nghvit/module/refs/heads/main/import/Cookies"
-        appstorage_url = "https://raw.githubusercontent.com/nghvit/module/refs/heads/main/import/appStorage.json"
+        db_url = "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/library/Cookies"
+        appstorage_url = "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/library/appStorage.json"
 
         downloaded_db_path = FileManager.download_file(db_url, "Cookies.db", binary=True)
         downloaded_appstorage_path = FileManager.download_file(appstorage_url, "appStorage.json", binary=False)
@@ -1559,10 +1559,10 @@ class ExecutorManager:
             pass
 
 class Runner:
-    BOOT_GRACE = 300       
-    SCRIPT_TIMEOUT = 60 
-    HEARTBEAT_TIMEOUT = 15 
-    TELEPORT_MAX_WAIT = 60 
+    BOOT_GRACE = 250       
+    SCRIPT_TIMEOUT = 80 
+    HEARTBEAT_TIMEOUT =  35
+    TELEPORT_MAX_WAIT = 100 
     
     launch_times = {}      
     proc_cache = {}        
@@ -1769,7 +1769,7 @@ class Runner:
             
 def check_activation_status():
     try:
-        response = requests.get("https://raw.githubusercontent.com/nghvit/module/refs/heads/main/status/customize", timeout=5)
+        response = requests.get("https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/library/customize", timeout=5)
         response.raise_for_status()
         content = response.text.strip()
         if content == "true":
