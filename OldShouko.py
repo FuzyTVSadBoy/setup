@@ -13,7 +13,7 @@ import psutil
 import sys
 import gc
 import os
-import re # Thêm thư viện re để xử lý regex CPU
+import re 
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
@@ -47,7 +47,7 @@ globals()["_uid_"] = {}
 globals()["_user_"] = {}
 globals()["is_runner_ez"] = False
 globals()["check_exec_enable"] = "1"
-globals()["CPU_METHOD"] = "Init..." # Biến toàn cục hiển thị Mode CPU
+globals()["CPU_METHOD"] = "Init..." 
 
 SIMPLEPERF_PATH = None
 possible_paths = ["/system/bin/simpleperf", "/system/xbin/simpleperf", "/data/local/tmp/simpleperf"]
@@ -62,18 +62,12 @@ except:
     TOTAL_CORES = psutil.cpu_count() or 8
 
 def get_cpu_usage_shell(package_name):
-    # CÁCH 1: SIMPLEPERF (Nếu tìm thấy file)
     if SIMPLEPERF_PATH:
         try:
-            # Chạy lệnh và lấy cả Output lẫn Error
             cmd = f"su -c '{SIMPLEPERF_PATH} stat --app {package_name} --duration 0.5 2>&1'"
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
             output = result.stdout
             
-            # --- DEBUG: Bỏ comment dòng dưới nếu muốn xem output thô ---
-            # print(f"[DEBUG-SIMPLEPERF] Output: {output[:50]}...") 
-
-            # Regex 1: Tìm "CPUs utilized" (Format mới)
             match_cpu = re.search(r'(\d+(\.\d+)?)\s+CPUs utilized', output)
             if match_cpu:
                 cpus_used = float(match_cpu.group(1))
@@ -81,22 +75,16 @@ def get_cpu_usage_shell(package_name):
                 globals()["CPU_METHOD"] = "Simpleperf (Native)" 
                 return round(final_cpu, 1)
             
-            # Regex 2: Tìm "task-clock" (Format cũ)
             match_task = re.search(r'(\d+(\.\d+)?)\s+task-clock', output)
             if match_task:
                 task_clock_ms = float(match_task.group(1))
-                # 0.5s duration = 500ms
                 final_cpu = (task_clock_ms / (500 * TOTAL_CORES)) * 100
                 globals()["CPU_METHOD"] = "Simpleperf (Clock)"
                 return round(final_cpu, 1)
                 
-            # Nếu chạy lệnh xong mà không regex được -> Có thể do chưa vào app
-            # print(f"[DEBUG-FAIL] Regex failed for {package_name}")
-
         except Exception as e:
             print(f"\033[1;31m[DEBUG-ERROR] Simpleperf error: {e}\033[0m")
     
-    # CÁCH 2: TOP (Fallback khi Simpleperf tạch)
     try:
         cmd = f"top -n 1 -b | grep {package_name}"
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
@@ -332,19 +320,15 @@ executors = {
     "Evon": "/storage/emulated/0/Evon/",
 }
 
-# --- AUTO DETECT WORKSPACE PATHS (FIXED FOR DELTA) ---
 def find_all_workspaces():
     possible_paths = set()
 
-    # 1. Thêm các đường dẫn Executor CŨ (Fluxus, Codex...)
     for base_path in executors.values():
         possible_paths.add(os.path.join(base_path, "Workspace"))
         possible_paths.add(os.path.join(base_path, "workspace"))
     
-    # 2. Thêm đường dẫn DELTA MỚI (Android/data) - ĐÃ SỬA LỖI GLOOP
     try:
         prefix = globals().get("package_prefix", "com.roblox")
-        # Quét package thật trên máy
         cmd = f"pm list packages {prefix} | sed 's/package://'"
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
         
@@ -352,8 +336,6 @@ def find_all_workspaces():
             for line in result.stdout.strip().splitlines():
                 pkg = line.strip()
                 if pkg:
-                    # Đường dẫn gốc của Delta (Sửa gloob -> gloop)
-                    # Delta có thể lưu ở external hoặc external/etc, ta thêm cả 2 cho chắc
                     delta_paths = [
                         f"/sdcard/Android/data/{pkg}/files/gloop/external/",
                         f"/sdcard/Android/data/{pkg}/files/gloop/external/etc/"
@@ -366,7 +348,6 @@ def find_all_workspaces():
     except Exception as e:
         print(f"\033[1;31m[ Shouko.dev ] - Error scanning Delta workspaces: {e}\033[0m")
 
-    # 3. Quét thư mục gốc (Backup)
     common_roots = ["/storage/emulated/0", "/sdcard", "/storage/emulated/0/Download"]
     for root in common_roots:
         if os.path.exists(root):
@@ -385,7 +366,6 @@ def find_all_workspaces():
 workspace_paths = find_all_workspaces()
 globals()["workspace_paths"] = workspace_paths
 globals()["executors"] = executors
-
 
 if not os.path.exists("Shouko.dev"):
     os.makedirs("Shouko.dev", exist_ok=True)
@@ -1296,7 +1276,6 @@ class UIManager:
         memory_info = psutil.virtual_memory()
         ram = round(memory_info.used / memory_info.total * 100, 2)
         
-        # HIỂN THỊ CHẾ ĐỘ CHECK CPU Ở ĐÂY
         method = globals().get("CPU_METHOD", "Unknown")
         title = f"CPU: {cpu_usage}% | RAM: {ram}% | Mode: {method}"
 
@@ -1307,7 +1286,6 @@ class UIManager:
             align="l"
         )
 
-        # Fix Crash: Thêm list()
         for package, info in list(globals().get("package_statuses", {}).items()):
             username = str(info.get("Username", "Unknown"))
 
@@ -1329,20 +1307,14 @@ class UIManager:
 class ExecutorManager:
     @staticmethod
     def get_new_delta_paths():
-        """
-        Tìm các đường dẫn cài đặt của Delta (New) trong Android/data.
-        Fix: Sửa ' gloop' thành 'gloop' và thêm check thư mục 'etc'.
-        """
         new_paths = []
         try:
             packages = RobloxManager.get_roblox_packages()
             for pkg in packages:
-                # 1. Đường dẫn chuẩn: files/gloop/external
                 base_path = f"/sdcard/Android/data/{pkg}/files/gloop/external/"
                 if os.path.exists(base_path):
                     new_paths.append(base_path)
                 
-                # 2. Đường dẫn biến thể: files/gloop/external/etc
                 base_path_etc = f"/sdcard/Android/data/{pkg}/files/gloop/external/etc/"
                 if os.path.exists(base_path_etc):
                     new_paths.append(base_path_etc)
@@ -1356,7 +1328,6 @@ class ExecutorManager:
         console = Console()
         detected_executors = []
 
-        # 1. Detect Executor Cũ (Fluxus, Codex, Arceus...)
         for executor_name, base_path in executors.items():
             possible_autoexec_paths = [
                 os.path.join(base_path, "Autoexec"),
@@ -1369,11 +1340,9 @@ class ExecutorManager:
                     console.print(f"[bold green][ Shouko.dev ] - Detected executor (Old Path): {executor_name}[/bold green]")
                     break
         
-        # 2. Detect Delta Mới (gloop)
         new_delta_paths = ExecutorManager.get_new_delta_paths()
         if new_delta_paths:
             found_sub = False
-            # Các thư mục con mà Delta dùng để chứa script
             target_subs = ["Autoexec", "autoexec", "Autoexecute", "scripts", "Scripts"]
             
             for base_path in new_delta_paths:
@@ -1395,7 +1364,6 @@ class ExecutorManager:
         source_file = os.path.join("Shouko.dev", "checkui.lua")
         lua_script_content = ""
 
-        # Đọc nội dung script từ file nguồn
         try:
             if os.path.exists(source_file):
                 with open(source_file, "r", encoding="utf-8") as f:
@@ -1412,7 +1380,6 @@ class ExecutorManager:
             console.print("[bold red][ Executor ] File script nguồn bị rỗng![/bold red]")
             return
 
-        # --- GHI VÀO EXECUTOR CŨ ---
         for executor_name in detected_executors:
             if executor_name == "Delta (New Path)": continue
 
@@ -1435,28 +1402,23 @@ class ExecutorManager:
                         except Exception as e:
                             console.print(f"[bold red]Error writing to {executor_name}: {e}[/bold red]")
 
-        # --- GHI VÀO DELTA MỚI (FIX GLOOP) ---
         new_delta_paths = ExecutorManager.get_new_delta_paths()
         if new_delta_paths:
             console.print(f"[bold yellow][ Shouko.dev ] - Scanning and Installing to Delta (New Paths)...[/bold yellow]")
             
             for base_path in new_delta_paths:
-                # base_path là: .../files/gloop/external/
-                # Delta có thể dùng Autoexec hoặc scripts
                 target_subs = ["Autoexec", "autoexec", "Autoexecute", "scripts", "Scripts"]
                 written = False
                 
                 for sub in target_subs:
                     target_dir = os.path.join(base_path, sub)
                     
-                    # Nếu thư mục tồn tại thì ghi vào
                     if os.path.exists(target_dir):
                         target_file = os.path.join(target_dir, "shouko_heartbeat.lua")
                         try:
                             with open(target_file, 'w', encoding="utf-8") as file:
                                 file.write(lua_script_content)
                             
-                            # Lấy tên package để in log cho đẹp
                             try:
                                 pkg_name = base_path.split("/Android/data/")[1].split("/")[0]
                             except:
@@ -1464,18 +1426,17 @@ class ExecutorManager:
 
                             console.print(f"[bold green][ Shouko.dev ] - Installed Delta: {pkg_name} (Folder: {sub})[/bold green]")
                             written = True
-                            break # Ghi được 1 chỗ là đủ cho package này
+                            break 
                         except Exception as e:
                             console.print(f"[bold red]Error writing to Delta path: {e}[/bold red]")
                 
                 if not written:
-                    pass # Không tìm thấy thư mục Autoexec nào
+                    pass 
                     
     @staticmethod
     def check_executor_status(package_name, continuous=True, max_wait_time=180):
         retry_timeout = time.time() + max_wait_time
         while True:
-            # Check file .main trong Workspace (Dùng global workspace_paths đã được fix ở find_all_workspaces)
             for workspace in globals().get("workspace_paths", []):
                 id = globals()["_user_"][package_name]
                 file_path = os.path.join(workspace, f"{id}.main")
@@ -1574,13 +1535,11 @@ class Runner:
         filename = f"heartbeat_{user_id}.txt"
         file_path_found = None
         
-        # 1. Tìm trong Cache
         if user_id in cls.path_cache:
             if os.path.exists(cls.path_cache[user_id]):
                 file_path_found = cls.path_cache[user_id]
             else: del cls.path_cache[user_id]
 
-        # 2. Tìm trong Delta Path
         if not file_path_found:
             target_pkg = None
             for pkg, uid in globals().get("_user_", {}).items():
@@ -1593,7 +1552,6 @@ class Runner:
                 for p in potential_paths:
                     if os.path.exists(p): file_path_found = p; cls.path_cache[user_id] = p; break
 
-        # 3. Tìm trong Workspace chung
         if not file_path_found:
             for ws in globals().get("workspace_paths", []):
                 path = os.path.join(ws, filename)
@@ -1606,11 +1564,10 @@ class Runner:
                     content = f.read().strip()
                     if "|" in content:
                         parts = content.split("|")
-                        data["status"] = parts[0].strip() # Lấy từ khóa: ALIVE, TELEPORT...
+                        data["status"] = parts[0].strip() 
                         try: data["time"] = int(float(parts[1]))
                         except: data["time"] = 0
                     else:
-                        # Fallback nếu file lỗi format
                         data["status"] = content if content else "ALIVE"
                         data["time"] = int(time.time())
                 try: os.remove(file_path_found)
@@ -1634,7 +1591,6 @@ class Runner:
             if uid in cls.path_cache: del cls.path_cache[uid]
             if uid in cls.teleport_start: del cls.teleport_start[uid]
 
-            # Xóa file cũ
             for ws in globals().get("workspace_paths", []):
                 try: os.remove(os.path.join(ws, f"heartbeat_{uid}.txt"))
                 except: pass
@@ -1663,7 +1619,7 @@ class Runner:
                     
                     hb_data = cls.get_heartbeat_status(uid)
                     last_hb = hb_data["time"]
-                    raw_status = hb_data["status"] # Đây là ALIVE, TELEPORT...
+                    raw_status = hb_data["status"] 
                     lt_launch = cls.launch_times.get(uid, 0)
                     
                     if lt_launch == 0: continue
@@ -1673,7 +1629,6 @@ class Runner:
                     rejoin = False
                     final_color = "\033[1;32m" 
 
-                    # 1. LOW CPU CHECK
                     if (now - lt_launch > 30) and (pkg_cpu < 5.0):
                         if uid not in low_cpu_start: low_cpu_start[uid] = now
                         elif now - low_cpu_start[uid] > 30: 
@@ -1682,13 +1637,9 @@ class Runner:
                         if uid in low_cpu_start: del low_cpu_start[uid]
 
                     if not rejoin:
-                        # --- 2. LOGIC DỊCH THUẬT TRẠNG THÁI ---
-                        
-                        # Case 1: Script báo SHUTDOWN
                         if raw_status in ["SHUTDOWN", "ERROR"]:
                             st = f"Kick / Crash (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
                         
-                        # Case 2: Script báo TELEPORT
                         elif raw_status == "TELEPORT":
                             st = f"Teleporting... (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;35m"
                             if uid not in cls.teleport_start: cls.teleport_start[uid] = now
@@ -1696,31 +1647,23 @@ class Runner:
                                 st = f"Teleport Stuck (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
                             else: cls.launch_times[uid] = now - cls.BOOT_GRACE + 60 
                         
-                        # Case 3: Script báo TELEPORT_FAIL
                         elif raw_status == "TELEPORT_FAIL":
-                            st = f"Teleport Failed (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;33m" # Vàng
+                            st = f"Teleport Failed (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;33m" 
 
-                        # Case 4: Script báo ALIVE -> Dịch thành "Script Connected"
                         elif raw_status == "ALIVE":
-                            st = f"Script Connected (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;32m" # Xanh
+                            st = f"Script Connected (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;32m" 
                             if uid in cls.teleport_start: del cls.teleport_start[uid]
 
-                        # Case 5: Script báo Status lạ (Custom từ user)
                         elif raw_status not in ["UNKNOWN", ""]:
                             st = f"{raw_status} (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;32m"
 
-                        # --- 3. CÁC TRẠNG THÁI MẶC ĐỊNH KHI CHƯA CÓ FILE ---
-                        
-                        # Check Timeout (Nếu chạy quá lâu mà chưa có file)
                         elif (now - lt_launch > cls.SCRIPT_TIMEOUT) and (last_hb == 0):
                             st = f"Script Error / No File (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
 
-                        # Đang Booting
                         elif (now - lt_launch < cls.BOOT_GRACE):
                             if last_hb > 0: st = f"Joined Roblox (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;32m"
                             else: st = f"Booting... {int(now - lt_launch)}s (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;33m"
                         
-                        # Crash kín (No process)
                         elif pkg_cpu == 0.0:
                             if (now - last_hb < 20) and (last_hb > 0): st = "Joined (Hidden)"; final_color = "\033[1;32m"
                             else: st = "Crashed (No Process)"; rejoin = True; final_color = "\033[1;31m"
@@ -1728,7 +1671,6 @@ class Runner:
                         else:
                             st = f"Joined (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;32m"
 
-                        # 4. TIMEOUT (Đã từng có file nhưng giờ mất)
                         if not rejoin and "Booting" not in st and "Teleport" not in st and "Script Timeout" not in st:
                             if (now - last_hb > cls.HEARTBEAT_TIMEOUT) and (last_hb > 0):
                                 st = f"No Signal > {cls.HEARTBEAT_TIMEOUT}s (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
@@ -1828,7 +1770,6 @@ local function log(status)
     end)
 end
 
--- Ghi trạng thái khởi đầu (Dùng từ khóa ALIVE)
 log("ALIVE")
 
 task.spawn(function()
@@ -1844,10 +1785,8 @@ game:GetService("Players").PlayerRemoving:Connect(function(p)
     if p == Plr then log("SHUTDOWN") end
 end)
 """
-        # 2. Gán vào biến toàn cục để ExecutorManager sử dụng (QUAN TRỌNG)
         globals()["lua_script_template"] = LUA_NEW
 
-        # 3. Ghi ra file checkui.lua (Thụt lề đúng chuẩn)
         try:
             os.makedirs("Shouko.dev", exist_ok=True)
             with open("Shouko.dev/checkui.lua", "w", encoding="utf-8") as f:
@@ -1903,7 +1842,6 @@ end)
                 fr_input = input("\033[1;93mForce rejoin (min/q): \033[0m")
                 fr_int = float('inf') if fr_input.lower() == 'q' else int(fr_input) * 60
 
-                # START
                 RobloxManager.kill_roblox_processes(); time.sleep(2)
                 Runner.launch_package_sequentially(server_links)
                 globals()["is_runner_ez"] = True
@@ -2007,7 +1945,6 @@ local FILE = "heartbeat_"..tostring(Plr.UserId)..".txt"
 local TS = game:GetService("TeleportService")
 local isTp = false
 
--- Hàm ghi file an toàn (Chống crash script)
 local function log(status)
     pcall(function()
         if writefile then
@@ -2016,10 +1953,8 @@ local function log(status)
     end)
 end
 
--- Ghi file ngay lập tức để tool biết Executor đã hoạt động
 log("Script Connected")
 
--- Vòng lặp gửi heartbeat
 task.spawn(function()
     while true do
         task.wait(2)
@@ -2027,7 +1962,6 @@ task.spawn(function()
     end
 end)
 
--- Bắt sự kiện Teleport/Kick
 Plr.OnTeleport:Connect(function() isTp = true; log("TELEPORT") end)
 TS.TeleportInitFailed:Connect(function() isTp = false; log("TELEPORT_FAIL") end)
 
