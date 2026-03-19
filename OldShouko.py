@@ -1527,13 +1527,7 @@ class ExecutorManager:
             pass
 
 class Runner:
-    BOOT_GRACE = 250       
-    SCRIPT_TIMEOUT = 80 
-    HEARTBEAT_TIMEOUT =  35
-    TELEPORT_MAX_WAIT = 100 
-    
     launch_times = {}      
-    proc_cache = {}        
     path_cache = {}        
     teleport_start = {}    
 
@@ -1542,11 +1536,14 @@ class Runner:
         filename = f"heartbeat_{user_id}.txt"
         file_path_found = None
         
+        # 1. Tìm trong cache trước cho tốc độ siêu tốc
         if user_id in cls.path_cache:
             if os.path.exists(cls.path_cache[user_id]):
                 file_path_found = cls.path_cache[user_id]
-            else: del cls.path_cache[user_id]
+            else: 
+                del cls.path_cache[user_id]
 
+        # 2. Quét trong thư mục data của Delta/Codex VNG
         if not file_path_found:
             target_pkg = None
             for pkg, uid in globals().get("_user_", {}).items():
@@ -1557,12 +1554,15 @@ class Runner:
                     f"/sdcard/Android/data/{target_pkg}/files/gloop/external/workspace/{filename}"
                 ]
                 for p in potential_paths:
-                    if os.path.exists(p): file_path_found = p; cls.path_cache[user_id] = p; break
+                    if os.path.exists(p): 
+                        file_path_found = p; cls.path_cache[user_id] = p; break
 
+        # 3. Quét các executor cũ
         if not file_path_found:
             for ws in globals().get("workspace_paths", []):
                 path = os.path.join(ws, filename)
-                if os.path.exists(path): cls.path_cache[user_id] = path; file_path_found = path; break
+                if os.path.exists(path): 
+                    cls.path_cache[user_id] = path; file_path_found = path; break
         
         data = {"status": "UNKNOWN", "time": 0}
         if file_path_found:
@@ -1577,6 +1577,8 @@ class Runner:
                     else:
                         data["status"] = content if content else "ALIVE"
                         data["time"] = int(time.time())
+                
+                # Đọc xong là xóa ngay để tránh tool bị ảo giác
                 try: os.remove(file_path_found)
                 except: pass
             except: pass
@@ -1594,7 +1596,7 @@ class Runner:
             uid = globals()["_user_"].get(pkg)
             if not uid: continue
             
-            if pkg in cls.proc_cache: del cls.proc_cache[pkg]
+            # Xóa sạch tàn dư cache cũ của acc này trước khi vào game
             if uid in cls.path_cache: del cls.path_cache[uid]
             if uid in cls.teleport_start: del cls.teleport_start[uid]
 
@@ -1614,9 +1616,8 @@ class Runner:
 
     @classmethod
     def monitor_presence(cls, server_links, stop_event):
-        print("\033[1;36m[ Runner ] - Monitor Active (Translating Status)...\033[0m")
-        low_cpu_start = {}
-
+        print("\033[1;36m[ Runner ] - Monitor Active (Chế Độ Trâu Bò & Lì Lợm)...\033[0m")
+        
         while not stop_event.is_set():
             try:
                 now = time.time()
@@ -1631,59 +1632,48 @@ class Runner:
                     
                     if lt_launch == 0: continue
 
+                    # Lấy CPU chỉ để in ra bảng cho đẹp, KHÔNG CAN THIỆP VÀO LOGIC KILL
                     pkg_cpu = get_cpu_usage_shell(pkg)
                     st = ""
                     rejoin = False
                     final_color = "\033[1;32m" 
 
-                    if not rejoin:
-                        # TẦNG 1: ƯU TIÊN SÁT THỦ - CÓ LỖI LÀ CHÉM (Không quan tâm đang Booting hay không)
-                        if raw_status.strip().startswith("SHUTDOWN") or raw_status.strip().startswith("ERROR"):
-                            st = f"Kick / Crash (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
-                        
-                        elif raw_status.strip().startswith("TELEPORT_FAILED"):
-                            st = f"Teleport Failed (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;33m" 
-                        
-                        elif raw_status.strip() == "TELEPORT":
-                            st = f"Teleporting... (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;35m"
-                            if uid not in cls.teleport_start: cls.teleport_start[uid] = now
-                            if now - cls.teleport_start[uid] > cls.TELEPORT_MAX_WAIT:
-                                st = f"Teleport Stuck (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
-                            else: 
-                                # Xóa trạng thái Booting ngay lập tức khi Teleport để tránh lỗi time
-                                cls.launch_times[uid] = now 
+                    # TẦNG 1: BẮT ĐƯỢC LỖI HIỆN LÊN MÀN HÌNH (Văng mạng, Kick, Crash UI) -> CHÉM NGAY KHÔNG THA
+                    if raw_status.strip().startswith("SHUTDOWN") or raw_status.strip().startswith("ERROR"):
+                        st = f"Kick / Crash (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
+                    
+                    elif raw_status.strip().startswith("TELEPORT_FAILED"):
+                        st = f"Teleport Failed (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;33m" 
+                    
+                    elif raw_status.strip() == "TELEPORT":
+                        st = f"Teleporting... (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;35m"
+                        if uid not in cls.teleport_start: cls.teleport_start[uid] = now
+                        if now - cls.teleport_start[uid] > 180: # Cấp cho Teleport hẳn 3 phút
+                            st = f"Teleport Stuck > 180s (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
+                        else: 
+                            # Reset time_launch để hệ thống không lầm tưởng đang Booting chậm
+                            cls.launch_times[uid] = now 
 
-                        elif raw_status.strip() == "ALIVE":
-                            st = f"Script Connected (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;32m" 
-                            if uid in cls.teleport_start: del cls.teleport_start[uid]
+                    elif raw_status.strip() == "ALIVE":
+                        st = f"Script Connected (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;32m" 
+                        if uid in cls.teleport_start: del cls.teleport_start[uid]
 
-                        # TẦNG 2: XỬ LÝ GIAI ĐOẠN BOOTING (CHƯA CÓ FILE HEARTBEAT ĐẦU TIÊN)
-                        elif last_hb == 0:
-                            # 250s là quá lâu! Ép xuống 80s. 
-                            # Quá 80s mà không có file -> Kẹt loading screen / Lỗi trước khi Inject -> Trảm!
-                            if now - lt_launch > 80: 
-                                st = f"Injection Failed / Stuck (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
-                            else:
-                                st = f"Booting... {int(now - lt_launch)}s (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;33m"
-
-                        # TẦNG 3: ĐÃ INJECT NHƯNG MẤT TÍN HIỆU (Văng game ẩn, đóng băng script)
-                        elif raw_status in ["UNKNOWN", ""]:
-                            if now - last_hb > cls.HEARTBEAT_TIMEOUT:
-                                st = f"No Signal > {cls.HEARTBEAT_TIMEOUT}s (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
-                            else:
-                                st = f"Waiting signal... (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;33m"
-                        
-                        # TẦNG 4: XỬ LÝ CRASH NGUẦM (CPU = 0)
-                        elif pkg_cpu == 0.0:
-                            if now - last_hb < 20: st = "Joined (Hidden)"; final_color = "\033[1;32m"
-                            else: st = "Crashed (No Process)"; rejoin = True; final_color = "\033[1;31m"
-                        
+                    # TẦNG 2: SỰ LÌ LỢM KHI MỚI MỞ GAME (Đang Loading map/Đợi Inject)
+                    elif last_hb == 0:
+                        if now - lt_launch > 180: # Cho tối đa 180s y hệt tool gốc
+                            st = f"Injection Stuck > 180s (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
                         else:
-                            st = f"Joined (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;32m"
+                            st = f"Booting... {int(now - lt_launch)}/180s (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;33m"
 
-                        if not rejoin and "Booting" not in st and "Teleport" not in st and "Script Timeout" not in st:
-                            if (now - last_hb > cls.HEARTBEAT_TIMEOUT) and (last_hb > 0):
-                                st = f"No Signal > {cls.HEARTBEAT_TIMEOUT}s (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
+                    # TẦNG 3: SỰ BAO DUNG KHI MẤT TÍN HIỆU (Lag mạng, Android ẩn tab, Đóng băng nền)
+                    elif raw_status in ["UNKNOWN", ""]:
+                        if now - last_hb > 180: # Có biến gì thì cũng chờ mạng/máy hồi 3 phút rồi mới giết
+                            st = f"No Signal > 180s (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
+                        else:
+                            st = f"Waiting signal... {int(now - last_hb)}/180s (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;33m"
+                    
+                    else:
+                        st = f"Joined (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;32m"
 
                     full_status = f"{final_color}{st}\033[0m"
                     with status_lock:
@@ -1692,15 +1682,12 @@ class Runner:
                             "Status": full_status
                         }
                     
+                    # BỘ MÁY XỬ LÝ TRẢM VÀ REJOIN
                     if rejoin:
                         print(f"\033[1;31m[AutoRejoin] {uid} -> Rejoining... Reason: {st}\033[0m")
-                        RobloxManager.kill_roblox_process(pkg)
-                        time.sleep(2)
-                        RobloxManager.launch_roblox(pkg, dict(server_links).get(pkg))
-                        cls.launch_times[uid] = time.time()
-                        time.sleep(5)
                         
-                        print("\033[1;35m[ Shouko.dev ] - Lost Roblox Tabs on Launcher, wake its up\033[0m")
+                        # Tuyệt kỹ Ve Sầu Thoát Xác bảo vệ Launcher
+                        print("\033[1;35m[ Shouko.dev ] - Đưa tab khỏe lên che chắn UI trước khi trảm...\033[0m")
                         for other_pkg, _ in server_links:
                             if other_pkg != pkg:
                                 try:
@@ -1708,9 +1695,18 @@ class Runner:
                                         '/system/bin/am', 'start',
                                         '-n', f'{other_pkg}/com.roblox.client.startup.ActivitySplash'
                                     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                                    time.sleep(1.5) # Nghỉ xíu để Android kịp chuyển cảnh
-                                except:
-                                    pass
+                                    time.sleep(1.5)
+                                    break
+                                except: pass
+
+                        # Âm thầm bóp cổ tab lỗi ở chế độ nền
+                        RobloxManager.kill_roblox_process(pkg)
+                        time.sleep(2)
+                        
+                        # Lôi tab đó lên lại
+                        RobloxManager.launch_roblox(pkg, dict(server_links).get(pkg))
+                        cls.launch_times[uid] = time.time()
+                        time.sleep(5)
 
                 time.sleep(1)
             except: pass
@@ -1721,8 +1717,11 @@ class Runner:
         start = time.time()
         while not stop.is_set():
             if interval != float('inf') and (time.time() - start >= interval):
-                 RobloxManager.kill_roblox_processes(); start = time.time(); time.sleep(5)
+                 print("\033[1;31m[ Shouko.dev ] - Force Rejoin Triggered! Cleaning up all instances...\033[0m")
+                 RobloxManager.kill_roblox_processes()
+                 time.sleep(5)
                  Runner.launch_package_sequentially(links)
+                 start = time.time()
             time.sleep(60)
 
     @staticmethod
