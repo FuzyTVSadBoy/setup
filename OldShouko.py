@@ -1647,7 +1647,7 @@ class Runner:
                                 st = f"Teleport Stuck (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
                             else: cls.launch_times[uid] = now - cls.BOOT_GRACE + 60 
                         
-                        elif raw_status == "TELEPORT_FAIL":
+                        elif raw_status == "TELEPORT_FAILED":
                             st = f"Teleport Failed (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;33m" 
 
                         elif raw_status == "ALIVE":
@@ -1768,33 +1768,90 @@ def main():
         globals()["check_exec_enable"] = "1"
         
         LUA_NEW = r"""
-local Plr = game:GetService("Players").LocalPlayer
-repeat task.wait() until Plr
-local FILE = "heartbeat_"..tostring(Plr.UserId)..".txt"
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
 local TS = game:GetService("TeleportService")
-local isTp = false
+local GuiService = game:GetService("GuiService")
 
+local Plr = Players.LocalPlayer
+repeat task.wait() until Plr
+
+local FILE = "heartbeat_"..tostring(Plr.UserId)..".txt"
+local isTp = false
+local isDead = false 
+
+-- Hàm log này tự động chèn thêm |TIME (os.time()) ở đuôi
 local function log(status)
     pcall(function()
-        if writefile then
-            writefile(FILE, status .. "|" .. tostring(os.time()))
+        if writefile then 
+            writefile(FILE, tostring(status) .. "|" .. tostring(os.time())) 
         end
     end)
 end
 
 log("ALIVE")
 
-task.spawn(function()
-    while true do
-        task.wait(2)
-        if not isTp then log("ALIVE") end
+-- 1. XỬ LÝ TELEPORT VÀ LỖI TELEPORT
+Plr.OnTeleport:Connect(function(teleportState)
+    if teleportState == Enum.TeleportState.Started or teleportState == Enum.TeleportState.InProgress then
+        isTp = true
+        log("TELEPORT")
+    elseif teleportState == Enum.TeleportState.Failed then
+        isTp = false
+        log("TELEPORT_FAILED")
     end
 end)
 
-Plr.OnTeleport:Connect(function() isTp = true; log("TELEPORT") end)
-TS.TeleportInitFailed:Connect(function() isTp = false; log("TELEPORT_FAIL") end)
-game:GetService("Players").PlayerRemoving:Connect(function(p)
-    if p == Plr then log("SHUTDOWN") end
+TS.TeleportInitFailed:Connect(function() 
+    isTp = false
+    log("TELEPORT_FAILED") 
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    if p == Plr then
+        if isTp then 
+            log("TELEPORT") 
+        else
+            isDead = true
+            log("SHUTDOWN")
+        end
+    end
+end)
+
+-- 2. ĐỌC BẢNG LỖI CHUNG (Cực nhạy với 277, 268...)
+task.spawn(function()
+    while true do
+        task.wait(2)
+        if isDead then break end 
+
+        local hasError = false
+        
+        pcall(function()
+            -- Bắt qua UI ErrorPrompt (Bảng thông báo giữa màn hình)
+            local promptGui = CoreGui:FindFirstChild("RobloxPromptGui")
+            if promptGui and promptGui:FindFirstChild("promptOverlay") then
+                local errorPrompt = promptGui.promptOverlay:FindFirstChild("ErrorPrompt")
+                if errorPrompt and errorPrompt.Visible then
+                    hasError = true
+                end
+            end
+            
+            -- Bắt qua GuiService (Phòng hờ UI bị ẩn)
+            if not hasError then
+                local errCode = GuiService:GetErrorCode()
+                if errCode and errCode ~= Enum.ConnectionError.OK then
+                    hasError = true
+                end
+            end
+        end)
+
+        if hasError then
+            isDead = true
+            log("ERROR") -- Sẽ ra output: ERROR|1731234567
+        elseif not isTp then
+            log("ALIVE") -- Sẽ ra output: ALIVE|1731234567
+        end
+    end
 end)
 """
         globals()["lua_script_template"] = LUA_NEW
