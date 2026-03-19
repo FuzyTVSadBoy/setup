@@ -1641,43 +1641,46 @@ class Runner:
                     rejoin = False
                     final_color = "\033[1;32m" 
 
-                    if (now - lt_launch > 30) and (pkg_cpu < 5.0):
-                        if uid not in low_cpu_start: low_cpu_start[uid] = now
-                        elif now - low_cpu_start[uid] > 30: 
-                            st = f"FROZEN (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
-                    else:
-                        if uid in low_cpu_start: del low_cpu_start[uid]
-
                     if not rejoin:
-                        if raw_status in ["SHUTDOWN", "ERROR"]:
+                        # TẦNG 1: ƯU TIÊN SÁT THỦ - CÓ LỖI LÀ CHÉM (Không quan tâm đang Booting hay không)
+                        if raw_status.strip().startswith("SHUTDOWN") or raw_status.strip().startswith("ERROR"):
                             st = f"Kick / Crash (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
                         
-                        elif raw_status == "TELEPORT":
+                        elif raw_status.strip().startswith("TELEPORT_FAILED"):
+                            st = f"Teleport Failed (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;33m" 
+                        
+                        elif raw_status.strip() == "TELEPORT":
                             st = f"Teleporting... (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;35m"
                             if uid not in cls.teleport_start: cls.teleport_start[uid] = now
                             if now - cls.teleport_start[uid] > cls.TELEPORT_MAX_WAIT:
                                 st = f"Teleport Stuck (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
-                            else: cls.launch_times[uid] = now - cls.BOOT_GRACE + 60 
-                        
-                        elif raw_status == "TELEPORT_FAILED":
-                            st = f"Teleport Failed (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;33m" 
+                            else: 
+                                # Xóa trạng thái Booting ngay lập tức khi Teleport để tránh lỗi time
+                                cls.launch_times[uid] = now 
 
-                        elif raw_status == "ALIVE":
+                        elif raw_status.strip() == "ALIVE":
                             st = f"Script Connected (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;32m" 
                             if uid in cls.teleport_start: del cls.teleport_start[uid]
 
-                        elif raw_status not in ["UNKNOWN", ""]:
-                            st = f"{raw_status} (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;32m"
+                        # TẦNG 2: XỬ LÝ GIAI ĐOẠN BOOTING (CHƯA CÓ FILE HEARTBEAT ĐẦU TIÊN)
+                        elif last_hb == 0:
+                            # 250s là quá lâu! Ép xuống 80s. 
+                            # Quá 80s mà không có file -> Kẹt loading screen / Lỗi trước khi Inject -> Trảm!
+                            if now - lt_launch > 80: 
+                                st = f"Injection Failed / Stuck (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
+                            else:
+                                st = f"Booting... {int(now - lt_launch)}s (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;33m"
 
-                        elif (now - lt_launch > cls.SCRIPT_TIMEOUT) and (last_hb == 0):
-                            st = f"Script Error / No File (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
-
-                        elif (now - lt_launch < cls.BOOT_GRACE):
-                            if last_hb > 0: st = f"Joined Roblox (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;32m"
-                            else: st = f"Booting... {int(now - lt_launch)}s (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;33m"
+                        # TẦNG 3: ĐÃ INJECT NHƯNG MẤT TÍN HIỆU (Văng game ẩn, đóng băng script)
+                        elif raw_status in ["UNKNOWN", ""]:
+                            if now - last_hb > cls.HEARTBEAT_TIMEOUT:
+                                st = f"No Signal > {cls.HEARTBEAT_TIMEOUT}s (CPU: {pkg_cpu:.1f}%)"; rejoin = True; final_color = "\033[1;31m"
+                            else:
+                                st = f"Waiting signal... (CPU: {pkg_cpu:.1f}%)"; final_color = "\033[1;33m"
                         
+                        # TẦNG 4: XỬ LÝ CRASH NGUẦM (CPU = 0)
                         elif pkg_cpu == 0.0:
-                            if (now - last_hb < 20) and (last_hb > 0): st = "Joined (Hidden)"; final_color = "\033[1;32m"
+                            if now - last_hb < 20: st = "Joined (Hidden)"; final_color = "\033[1;32m"
                             else: st = "Crashed (No Process)"; rejoin = True; final_color = "\033[1;31m"
                         
                         else:
