@@ -909,15 +909,27 @@ class RobloxManager:
     def kill_roblox_process(package_name):
         print(f"\033[1;96m[ Shouko.dev ] - Killing Roblox process for {package_name}...\033[0m")
         try:
-            subprocess.run(
-                ["/system/bin/am", "force-stop", package_name],
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            print(f"\033[1;32m[ Shouko.dev ] - Killed process for {package_name}\033[0m")
+            # 1. Tìm PID của package đang chạy
+            cmd = f"pidof {package_name}"
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            pids = result.stdout.strip().split()
+            
+            if pids:
+                # 2. Kill trực tiếp bằng tín hiệu Linux (-9) để không làm sập UI Android
+                for pid in pids:
+                    subprocess.run(["kill", "-9", pid], capture_output=True)
+                print(f"\033[1;32m[ Shouko.dev ] - Silently killed PID(s) {', '.join(pids)} for {package_name}\033[0m")
+            else:
+                # Backup: Nếu không tìm thấy PID thì mới đành xài force-stop
+                subprocess.run(
+                    ["/system/bin/am", "force-stop", package_name],
+                    capture_output=True,
+                    text=True
+                )
+                print(f"\033[1;33m[ Shouko.dev ] - Force-stopped {package_name} (No PID found)\033[0m")
+                
             time.sleep(2)
-        except subprocess.CalledProcessError as e:
+        except Exception as e:
             print(f"\033[1;31m[ Shouko.dev ] - Error killing process for {package_name}: {e}\033[0m")
             Utilities.log_error(f"Error killing process for {package_name}: {e}")
 
