@@ -909,29 +909,24 @@ class RobloxManager:
     def kill_roblox_process(package_name):
         print(f"\033[1;96m[ Shouko.dev ] - Killing Roblox process for {package_name}...\033[0m")
         try:
-            # 1. Tìm PID của package đang chạy
-            cmd = f"pidof {package_name}"
+            # Dùng ps và awk để lấy đúng PID, bỏ qua pidof (hay bị lỗi trên Cloud Phone)
+            cmd = f"ps -A | grep {package_name} | grep -v grep | awk '{{print $2}}'"
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
             pids = result.stdout.strip().split()
             
             if pids:
-                # 2. Kill trực tiếp bằng tín hiệu Linux (-9) để không làm sập UI Android
+                # Bắn lệnh kill -9 tàn bạo nhất vào thẳng nhân Linux
                 for pid in pids:
                     subprocess.run(["kill", "-9", pid], capture_output=True)
                 print(f"\033[1;32m[ Shouko.dev ] - Silently killed PID(s) {', '.join(pids)} for {package_name}\033[0m")
             else:
-                # Backup: Nếu không tìm thấy PID thì mới đành xài force-stop
-                subprocess.run(
-                    ["/system/bin/am", "force-stop", package_name],
-                    capture_output=True,
-                    text=True
-                )
+                # Xui lắm mới xài force-stop
+                subprocess.run(["/system/bin/am", "force-stop", package_name], capture_output=True)
                 print(f"\033[1;33m[ Shouko.dev ] - Force-stopped {package_name} (No PID found)\033[0m")
                 
-            time.sleep(2)
+            time.sleep(1)
         except Exception as e:
-            print(f"\033[1;31m[ Shouko.dev ] - Error killing process for {package_name}: {e}\033[0m")
-            Utilities.log_error(f"Error killing process for {package_name}: {e}")
+            pass
 
     @staticmethod
     def delete_cache_for_package(package_name):
