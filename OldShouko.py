@@ -1689,6 +1689,18 @@ class Runner:
                         RobloxManager.launch_roblox(pkg, dict(server_links).get(pkg))
                         cls.launch_times[uid] = time.time()
                         time.sleep(5)
+                        
+                        print("\033[1;35m[ Shouko.dev ] - Lost Roblox Tabs on Launcher, wake its up\033[0m")
+                        for other_pkg, _ in server_links:
+                            if other_pkg != pkg:
+                                try:
+                                    subprocess.run([
+                                        '/system/bin/am', 'start',
+                                        '-n', f'{other_pkg}/com.roblox.client.startup.ActivitySplash'
+                                    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                    time.sleep(1.5) # Nghỉ xíu để Android kịp chuyển cảnh
+                                except:
+                                    pass
 
                 time.sleep(1)
             except: pass
