@@ -20,16 +20,16 @@ hdr()  { echo -e "\n${B}========== $1 ==========${N}"; }
 # ============================================================
 
 APK_1_NAME="App 1"
-APK_1_URL=""
+APK_1_URL="https://files.catbox.moe/j19dz4.apk"
 
 APK_2_NAME="App 2"
-APK_2_URL=""
+APK_2_URL="https://files.catbox.moe/blxs0h.apk"
 
 APK_3_NAME="App 3"
-APK_3_URL=""
+APK_3_URL="https://files.catbox.moe/yhsfgi.apk"
 
 APK_4_NAME="App 4"
-APK_4_URL=""
+APK_4_URL="https://files.catbox.moe/w3goln.apk"
 
 # ============================================================
 
