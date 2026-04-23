@@ -99,7 +99,8 @@ yes | pkg update -y -q
 yes | pkg install python python-pip curl -y -q
 
 log "Cài đặt Python Libs..."
-pip install --quiet requests rich prettytable psutil
+pip install --quiet requests rich prettytable 
+pkg install python-psutil
 
 log "Tải OldShouko.py..."
 curl -Ls "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/OldShouko.py" -o "$HOME/OldShouko.py"
