@@ -1,23 +1,20 @@
 #!/bin/bash
 # ============================================================
 #  AIO SETUP TOOL - Roblox MMO Cloud Phone (UgPhone)
-#  Không cần root | Dùng ADB localhost trong Termux
+#  Multi-method: cmd / content / adb localhost
 # ============================================================
-
-set -e
 
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'
 B='\033[0;34m'; C='\033[0;36m'; N='\033[0m'
 
 log()  { echo -e "${G}[OK]${N} $1"; }
 warn() { echo -e "${Y}[!!]${N} $1"; }
-err()  { echo -e "${R}[ERR]${N} $1"; exit 1; }
+err()  { echo -e "${R}[ERR]${N} $1"; }
 hdr()  { echo -e "\n${B}========== $1 ==========${N}"; }
 
 # ============================================================
-#  >>> CẤU HÌNH LINK APK - CHỈNH TẠI ĐÂY <<<
+#  >>> 4 LINK APK <<<
 # ============================================================
-
 APK_1_NAME="App 1"
 APK_1_URL="https://files.catbox.moe/w3goln.apk"
 
@@ -29,79 +26,135 @@ APK_3_URL="https://files.catbox.moe/blxs0h.apk"
 
 APK_4_NAME="App 4"
 APK_4_URL="https://files.catbox.moe/j19dz4.apk"
+# ============================================================
+
+# ============================================================
+#  HÀM CHẠY LỆNH ĐA-METHOD
+#  Thử theo thứ tự: cmd → content → adb shell → báo lỗi
+# ============================================================
+
+ADB_OK=0
+
+# Khởi tạo ADB nếu có
+init_adb() {
+    if [ "$ADB_OK" = "1" ]; then return 0; fi
+    if ! command -v adb &>/dev/null; then
+        yes | pkg install -y android-tools -q 2>/dev/null
+    fi
+    for port in 5555 5554 5037; do
+        adb connect localhost:$port &>/dev/null
+        sleep 1
+        if adb shell echo ok 2>/dev/null | grep -q "ok"; then
+            log "ADB kết nối qua localhost:$port"
+            ADB_OK=1
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Đặt setting global
+set_global() {
+    local key="$1" val="$2"
+
+    # Method 1: cmd settings (uid thường, nhưng một số ROM cho phép)
+    if cmd settings put global "$key" "$val" 2>/dev/null; then
+        log "  [cmd] $key = $val"
+        return 0
+    fi
+
+    # Method 2: content provider trực tiếp
+    if content insert --uri content://settings/global \
+        --bind name:s:"$key" --bind value:s:"$val" 2>/dev/null; then
+        log "  [content insert] $key = $val"
+        return 0
+    fi
+    # Nếu đã tồn tại thì update
+    if content update --uri content://settings/global \
+        --bind value:s:"$val" \
+        --where "name='$key'" 2>/dev/null; then
+        log "  [content update] $key = $val"
+        return 0
+    fi
+
+    # Method 3: adb shell
+    init_adb
+    if [ "$ADB_OK" = "1" ]; then
+        if adb shell settings put global "$key" "$val" 2>/dev/null; then
+            log "  [adb] $key = $val"
+            return 0
+        fi
+    fi
+
+    warn "  Không đặt được: $key (bỏ qua)"
+    return 1
+}
+
+set_system() {
+    local key="$1" val="$2"
+
+    if cmd settings put system "$key" "$val" 2>/dev/null; then
+        log "  [cmd] system.$key = $val"; return 0
+    fi
+    if content update --uri content://settings/system \
+        --bind value:s:"$val" --where "name='$key'" 2>/dev/null; then
+        log "  [content] system.$key = $val"; return 0
+    fi
+    init_adb
+    if [ "$ADB_OK" = "1" ]; then
+        adb shell settings put system "$key" "$val" 2>/dev/null \
+            && log "  [adb] system.$key = $val" && return 0
+    fi
+    warn "  Không đặt được: system.$key"
+}
+
+run_wm() {
+    # wm cần shell uid - chỉ adb hoặc cmd window
+    if cmd window density "$1" 2>/dev/null; then
+        log "  [cmd window] density = $1"; return 0
+    fi
+    init_adb
+    if [ "$ADB_OK" = "1" ]; then
+        adb shell wm density "$1" 2>/dev/null \
+            && log "  [adb wm] density = $1" && return 0
+    fi
+    warn "  Không đặt được wm density"
+}
+
+run_pm_disable() {
+    local pkg="$1"
+    # pm disable cần shell uid
+    init_adb
+    if [ "$ADB_OK" = "1" ]; then
+        adb shell pm disable-user --user 0 "$pkg" 2>/dev/null \
+            && log "Disabled: $pkg" && return 0
+    fi
+    warn "Không disable được: $pkg"
+}
 
 # ============================================================
 
-# ---------- BƯỚC 0: CÀI ADB & KẾT NỐI LOCALHOST ----------
-hdr "0. SETUP ADB LOCALHOST"
-
-# Cài adb nếu chưa có
-if ! command -v adb &>/dev/null; then
-    warn "Chưa có adb, đang cài..."
-    yes | pkg install -y android-tools
-    log "Đã cài adb"
-else
-    log "adb đã có sẵn"
-fi
-
-# Kết nối ADB vào chính thiết bị qua localhost
-warn "Đang kết nối ADB localhost:5555..."
-adb connect localhost:5555 2>/dev/null || true
-sleep 2
-
-# Kiểm tra kết nối
-if ! adb shell echo ok 2>/dev/null | grep -q "ok"; then
-    warn "Port 5555 thất bại, thử 5554..."
-    adb connect localhost:5554 2>/dev/null || true
-    sleep 2
-fi
-
-if ! adb shell echo ok 2>/dev/null | grep -q "ok"; then
-    err "Không kết nối được ADB localhost. UgPhone cần bật ADB Wireless trong cài đặt thiết bị."
-fi
-
-log "ADB localhost kết nối thành công!"
-
-# Hàm chạy lệnh qua adb shell
-S() { adb shell "$@" 2>/dev/null; }
-
 # ---------- BƯỚC 1: BẬT CHẾ ĐỘ NHÀ PHÁT TRIỂN ----------
 hdr "1. BẬT CHẾ ĐỘ NHÀ PHÁT TRIỂN"
-S settings put global development_settings_enabled 1
-S settings put global adb_enabled 1
-log "Developer options: BẬT"
+set_global development_settings_enabled 1
+set_global adb_enabled 1
 
 # ---------- BƯỚC 2: BẬT 4 TÍNH NĂNG DEVELOPER ----------
 hdr "2. BẬT 4 TÍNH NĂNG DEVELOPER"
-
-S settings put global force_allow_on_external 1
-log "Buộc cho phép ứng dụng trên bộ nhớ ngoài: BẬT"
-
-S settings put global force_resizable_activities 1
-log "Buộc hoạt động có thể thay đổi kích thước: BẬT"
-
-S settings put global enable_freeform_support 1
-log "Cửa sổ dạng tự do: BẬT"
-
-S settings put global force_desktop_mode_on_external_displays 1
-log "Buộc chạy chế độ máy tính: BẬT"
+set_global force_allow_on_external 1
+set_global force_resizable_activities 1
+set_global enable_freeform_support 1
+set_global force_desktop_mode_on_external_displays 1
 
 # ---------- BƯỚC 3: CHỈNH DPI = 220 ----------
 hdr "3. CHỈNH DPI -> 220"
-S wm density 220
-S settings put system screen_density 220
-log "DPI đã đặt thành 220"
+run_wm 220
+set_system screen_density 220
 
 # ---------- BƯỚC 4: DISABLE GOOGLE PLAY ----------
 hdr "4. TẮT GOOGLE PLAY"
 for pkg in com.android.vending com.google.android.gms com.google.android.gsf; do
-    if S pm list packages | grep -q "$pkg"; then
-        S pm disable-user --user 0 "$pkg" \
-            && log "Disabled: $pkg" \
-            || warn "Không disable được: $pkg (bỏ qua)"
-    else
-        warn "Không tìm thấy: $pkg"
-    fi
+    run_pm_disable "$pkg"
 done
 
 # ---------- BƯỚC 5: TERMUX - SETUP STORAGE ----------
@@ -137,9 +190,8 @@ done
 if [ -n "$BEST_URL" ] && [ "$BEST_TIME" -lt 999999 ]; then
     log "Repo nhanh nhất: $BEST_URL (${BEST_TIME}ms)"
     echo "deb $BEST_URL stable main" > "$PREFIX/etc/apt/sources.list"
-    log "Đã ghi sources.list"
 else
-    warn "Không ping được repo nào, dùng script change-repo gốc..."
+    warn "Fallback sang script change-repo gốc..."
     . <(curl -Ls https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/termux-change-repo.sh)
 fi
 
@@ -150,43 +202,53 @@ yes | pkg upgrade -y
 yes | pkg install -y python python-pip curl wget
 
 pip install --quiet requests rich prettytable pytz
-
 export CFLAGS="-Wno-error=implicit-function-declaration"
 pip install --quiet psutil
 
 log "Tải OldShouko.py..."
 curl -Ls "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/OldShouko.py" \
      -o /sdcard/Download/OldShouko.py
-log "OldShouko.py -> /sdcard/Download/OldShouko.py"
+log "OldShouko.py -> /sdcard/Download/"
 
 # ---------- BƯỚC 8: TẢI & CÀI 4 APK ----------
 hdr "8. TẢI & CÀI 4 APK"
 
 install_apk() {
-    local name="$1"
-    local url="$2"
-    local idx="$3"
+    local name="$1" url="$2" idx="$3"
     local dest="/sdcard/Download/aio_app${idx}.apk"
 
-    if [ -z "$url" ]; then
-        warn "[$name] Link trống, bỏ qua."
+    if [ -z "$url" ]; then warn "[$name] Link trống, bỏ qua."; return 0; fi
+
+    echo -e "${C}>> Đang tải [$name]...${N}"
+    if ! curl -L --progress-bar --connect-timeout 20 --retry 3 --retry-delay 2 \
+              -o "$dest" "$url"; then
+        err "[$name] Tải thất bại."
+        return 1
+    fi
+    log "[$name] Tải xong -> $dest"
+
+    echo -e "${C}>> Đang cài [$name]...${N}"
+
+    # Method 1: adb pm install (shell uid - silent)
+    init_adb
+    if [ "$ADB_OK" = "1" ]; then
+        if adb shell pm install -r -g "$dest" 2>/dev/null; then
+            log "[$name] Cài thành công (adb pm install)!"
+            return 0
+        fi
+    fi
+
+    # Method 2: am start intent (mở trình cài đặt)
+    if am start -a android.intent.action.VIEW \
+        -d "file://$dest" \
+        -t "application/vnd.android.package-archive" \
+        --flags 0x10000001 2>/dev/null; then
+        log "[$name] Đã mở trình cài đặt APK"
+        sleep 3
         return 0
     fi
 
-    echo -e "${C}>> Đang tải [$name]...${N}"
-    if curl -L --progress-bar --connect-timeout 15 --retry 3 --retry-delay 2 \
-            -o "$dest" "$url"; then
-        log "[$name] Tải xong -> $dest"
-        echo -e "${C}>> Đang cài [$name]...${N}"
-        # Cài qua adb shell pm install (có quyền shell)
-        if adb shell pm install -r -g "$dest" 2>/dev/null; then
-            log "[$name] Cài APK thành công!"
-        else
-            warn "[$name] pm install thất bại. File đã lưu: $dest"
-        fi
-    else
-        err "[$name] Tải thất bại. Kiểm tra lại link."
-    fi
+    warn "[$name] Cần cài thủ công: $dest"
 }
 
 install_apk "$APK_1_NAME" "$APK_1_URL" 1
@@ -197,7 +259,6 @@ install_apk "$APK_4_NAME" "$APK_4_URL" 4
 # ---------- HOÀN TẤT ----------
 hdr "HOÀN TẤT"
 echo -e "${G}"
-echo "  ✔ ADB localhost           : KẾT NỐI"
 echo "  ✔ Developer options       : BẬT"
 echo "  ✔ 4 tính năng developer   : BẬT"
 echo "  ✔ DPI                     : 220"
