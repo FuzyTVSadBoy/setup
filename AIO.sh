@@ -1,8 +1,7 @@
 #!/bin/bash
 # ============================================================
-#  AIO SETUP TOOL - Roblox MMO Cloud Phone
-#  Không cần root | Chạy trong Termux
-#  Cách dùng: bash aio_setup.sh
+#  AIO SETUP TOOL - Roblox MMO Cloud Phone (UgPhone)
+#  Không cần root | Dùng ADB localhost trong Termux
 # ============================================================
 
 set -e
@@ -12,7 +11,7 @@ B='\033[0;34m'; C='\033[0;36m'; N='\033[0m'
 
 log()  { echo -e "${G}[OK]${N} $1"; }
 warn() { echo -e "${Y}[!!]${N} $1"; }
-err()  { echo -e "${R}[ERR]${N} $1"; }
+err()  { echo -e "${R}[ERR]${N} $1"; exit 1; }
 hdr()  { echo -e "\n${B}========== $1 ==========${N}"; }
 
 # ============================================================
@@ -20,51 +19,84 @@ hdr()  { echo -e "\n${B}========== $1 ==========${N}"; }
 # ============================================================
 
 APK_1_NAME="App 1"
-APK_1_URL="https://files.catbox.moe/j19dz4.apk"
+APK_1_URL="https://files.catbox.moe/w3goln.apk"
 
 APK_2_NAME="App 2"
-APK_2_URL="https://files.catbox.moe/blxs0h.apk"
+APK_2_URL="https://files.catbox.moe/yhsfgi.apk"
 
 APK_3_NAME="App 3"
-APK_3_URL="https://files.catbox.moe/yhsfgi.apk"
+APK_3_URL="https://files.catbox.moe/blxs0h.apk"
 
 APK_4_NAME="App 4"
-APK_4_URL="https://files.catbox.moe/w3goln.apk"
+APK_4_URL="https://files.catbox.moe/j19dz4.apk"
 
 # ============================================================
 
+# ---------- BƯỚC 0: CÀI ADB & KẾT NỐI LOCALHOST ----------
+hdr "0. SETUP ADB LOCALHOST"
+
+# Cài adb nếu chưa có
+if ! command -v adb &>/dev/null; then
+    warn "Chưa có adb, đang cài..."
+    yes | pkg install -y android-tools
+    log "Đã cài adb"
+else
+    log "adb đã có sẵn"
+fi
+
+# Kết nối ADB vào chính thiết bị qua localhost
+warn "Đang kết nối ADB localhost:5555..."
+adb connect localhost:5555 2>/dev/null || true
+sleep 2
+
+# Kiểm tra kết nối
+if ! adb shell echo ok 2>/dev/null | grep -q "ok"; then
+    warn "Port 5555 thất bại, thử 5554..."
+    adb connect localhost:5554 2>/dev/null || true
+    sleep 2
+fi
+
+if ! adb shell echo ok 2>/dev/null | grep -q "ok"; then
+    err "Không kết nối được ADB localhost. UgPhone cần bật ADB Wireless trong cài đặt thiết bị."
+fi
+
+log "ADB localhost kết nối thành công!"
+
+# Hàm chạy lệnh qua adb shell
+S() { adb shell "$@" 2>/dev/null; }
+
 # ---------- BƯỚC 1: BẬT CHẾ ĐỘ NHÀ PHÁT TRIỂN ----------
 hdr "1. BẬT CHẾ ĐỘ NHÀ PHÁT TRIỂN"
-settings put global development_settings_enabled 1
-settings put global adb_enabled 1
+S settings put global development_settings_enabled 1
+S settings put global adb_enabled 1
 log "Developer options: BẬT"
 
 # ---------- BƯỚC 2: BẬT 4 TÍNH NĂNG DEVELOPER ----------
 hdr "2. BẬT 4 TÍNH NĂNG DEVELOPER"
 
-settings put global force_allow_on_external 1
+S settings put global force_allow_on_external 1
 log "Buộc cho phép ứng dụng trên bộ nhớ ngoài: BẬT"
 
-settings put global force_resizable_activities 1
+S settings put global force_resizable_activities 1
 log "Buộc hoạt động có thể thay đổi kích thước: BẬT"
 
-settings put global enable_freeform_support 1
+S settings put global enable_freeform_support 1
 log "Cửa sổ dạng tự do: BẬT"
 
-settings put global force_desktop_mode_on_external_displays 1
+S settings put global force_desktop_mode_on_external_displays 1
 log "Buộc chạy chế độ máy tính: BẬT"
 
 # ---------- BƯỚC 3: CHỈNH DPI = 220 ----------
 hdr "3. CHỈNH DPI -> 220"
-wm density 220
-settings put system screen_density 220
+S wm density 220
+S settings put system screen_density 220
 log "DPI đã đặt thành 220"
 
 # ---------- BƯỚC 4: DISABLE GOOGLE PLAY ----------
 hdr "4. TẮT GOOGLE PLAY"
 for pkg in com.android.vending com.google.android.gms com.google.android.gsf; do
-    if pm list packages 2>/dev/null | grep -q "$pkg"; then
-        pm disable-user --user 0 "$pkg" 2>/dev/null \
+    if S pm list packages | grep -q "$pkg"; then
+        S pm disable-user --user 0 "$pkg" \
             && log "Disabled: $pkg" \
             || warn "Không disable được: $pkg (bỏ qua)"
     else
@@ -78,7 +110,7 @@ hdr "5. TERMUX - SETUP STORAGE"
 termux-setup-storage
 log "Storage Termux đã thiết lập"
 
-# ---------- BƯỚC 6: CHỌN REPO NHANH NHẤT (SINGAPORE/ASIA) ----------
+# ---------- BƯỚC 6: CHỌN REPO NHANH NHẤT ----------
 hdr "6. CHỌN REPO TERMUX NHANH NHẤT"
 
 REPOS=(
@@ -146,17 +178,11 @@ install_apk() {
             -o "$dest" "$url"; then
         log "[$name] Tải xong -> $dest"
         echo -e "${C}>> Đang cài [$name]...${N}"
-        # Thử pm install trước (cloud phone thường cho phép)
-        if pm install -r -g "$dest" 2>/dev/null; then
+        # Cài qua adb shell pm install (có quyền shell)
+        if adb shell pm install -r -g "$dest" 2>/dev/null; then
             log "[$name] Cài APK thành công!"
         else
-            # Fallback: mở intent để hệ thống cài
-            am start -a android.intent.action.VIEW \
-                -d "file://$dest" \
-                -t "application/vnd.android.package-archive" \
-                --flags 0x10000001 2>/dev/null \
-                && log "[$name] Đã mở trình cài đặt APK" \
-                || err "[$name] Không cài được. File đã lưu tại: $dest"
+            warn "[$name] pm install thất bại. File đã lưu: $dest"
         fi
     else
         err "[$name] Tải thất bại. Kiểm tra lại link."
@@ -171,6 +197,7 @@ install_apk "$APK_4_NAME" "$APK_4_URL" 4
 # ---------- HOÀN TẤT ----------
 hdr "HOÀN TẤT"
 echo -e "${G}"
+echo "  ✔ ADB localhost           : KẾT NỐI"
 echo "  ✔ Developer options       : BẬT"
 echo "  ✔ 4 tính năng developer   : BẬT"
 echo "  ✔ DPI                     : 220"
