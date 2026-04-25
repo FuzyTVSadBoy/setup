@@ -101,7 +101,8 @@ install_silent "$APK_4_URL" 4
 # ============================================================
 hdr "4. TERMUX & LIBRARIES"
 log "Cập nhật Termux (Mirror HK)..."
-pkg update && yes | pkg upgrade && yes
+yes | pkg update
+yes | pkg upgrade
 yes | pkg install python python-pip curl ncurses-utils -y -q
 
 log "Cài đặt Python Libs..."
