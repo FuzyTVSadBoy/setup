@@ -2,7 +2,7 @@
 # ============================================================
 #  AIO SETUP TOOL - ROOOT VERSION (Optimized for HK Cloud)
 # ============================================================
-
+pkg update && yes | pkg upgrade && yes
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'
 B='\033[0;34m'; C='\033[0;36m'; N='\033[0m'
 
@@ -101,7 +101,6 @@ install_silent "$APK_4_URL" 4
 # ============================================================
 hdr "4. TERMUX & LIBRARIES"
 log "Cập nhật Termux (Mirror HK)..."
-yes | pkg update -y -q
 yes | pkg install python python-pip curl ncurses-utils -y -q
 
 log "Cài đặt Python Libs..."
