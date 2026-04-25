@@ -21,8 +21,8 @@ run_root() {
     su -c "$1"
 }
 
-APK_1_URL="https://files.catbox.moe/w3goln.apk"
-APK_2_URL="https://files.catbox.moe/0x8zhw.apk"
+APK_1_URL="https://files.catbox.moe/geknxt.apk"
+APK_2_URL="https://files.catbox.moe/toqkya.apk"
 APK_3_URL="https://files.catbox.moe/blxs0h.apk"
 APK_4_URL="https://files.catbox.moe/j19dz4.apk"
 
