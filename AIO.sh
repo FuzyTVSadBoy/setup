@@ -58,14 +58,6 @@ clear
 log "DPI đã đổi xong. Giao diện Terminal đã được reset."
 
 # ============================================================
-hdr "2. VÔ HIỆU HÓA GOOGLE SERVICES"
-APPS=("com.android.vending" "com.google.android.gms" "com.google.android.gsf")
-for pkg in "${APPS[@]}"; do
-    run_root "pm disable-user --user 0 $pkg" >/dev/null 2>&1
-    log "Đã tắt: $pkg"
-done
-
-# ============================================================
 hdr "3. TẢI VÀ CÀI ĐẶT APK IM LẶNG"
 
 install_silent() {
