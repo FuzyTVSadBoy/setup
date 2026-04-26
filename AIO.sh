@@ -21,8 +21,8 @@ run_root() {
     su -c "$1"
 }
 
-APK_1_URL="https://files.catbox.moe/geknxt.apk"
-APK_2_URL="https://files.catbox.moe/toqkya.apk"
+APK_1_URL="https://files.catbox.moe/wtgeox.apk"
+APK_2_URL="https://files.catbox.moe/uxuqs1.apk"
 APK_3_URL="https://files.catbox.moe/blxs0h.apk"
 APK_4_URL="https://files.catbox.moe/j19dz4.apk"
 
@@ -49,7 +49,7 @@ run_root "wm density 220"
 run_root "settings put system screen_density 220"
 
 # --- FIX LỖI BẬC THANG ---
-sleep 2
+sleep 3
 reset
 stty sane
 clear
