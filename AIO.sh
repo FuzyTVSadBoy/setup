@@ -22,7 +22,7 @@ run_root() {
 }
 
 APK_1_URL="https://files.catbox.moe/wtgeox.apk"
-APK_2_URL="https://files.catbox.moe/uxuqs1.apk"
+APK_2_URL="https://files.catbox.moe/2tuv2h.apk"
 APK_3_URL="https://files.catbox.moe/blxs0h.apk"
 APK_4_URL="https://files.catbox.moe/j19dz4.apk"
 
