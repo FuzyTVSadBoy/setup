@@ -98,11 +98,11 @@ yes | pkg upgrade
 yes | pkg install python python-pip curl ncurses-utils -y -q
 
 log "Cài đặt Python Libs..."
-pip install --quiet requests rich prettytable 
+pip install --quiet requests rich prettytable pytz
 pkg install python-psutil -y -q
 
 log "Tải OldShouko.py..."
-curl -Ls "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/OldShouko.py" -o "$HOME/OldShouko.py"
+curl -Ls "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/OldShouko.py" -o /sdcard/Download/OldShouko.py
 
 # ============================================================
 hdr "HOÀN TẤT THIẾT LẬP"
