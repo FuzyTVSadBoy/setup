@@ -21,8 +21,8 @@ run_root() {
     su -c "$1"
 }
 
-APK_1_URL="https://files.catbox.moe/wtgeox.apk"
-APK_2_URL="https://files.catbox.moe/2tuv2h.apk"
+APK_1_URL="https://cold-na-phx-8.gofile.io/download/web/4c1881c5-de8a-4933-ae98-f94fb0f70243/CodexQTClone(zam)%2001-2.720.1167.apk.apk"
+APK_2_URL="https://cold-na-phx-8.gofile.io/download/web/5005c0cd-92db-4c41-ab01-39286e18e50e/CodexQTClone(zam)%2002-2.720.1167.apk.apk"
 APK_3_URL="https://files.catbox.moe/blxs0h.apk"
 APK_4_URL="https://files.catbox.moe/j19dz4.apk"
 
@@ -102,7 +102,7 @@ pip install --quiet requests rich prettytable pytz
 pkg install python-psutil -y -q
 
 log "Tải OldShouko.py..."
-curl -Ls "https://raw.githubusercontent.com/FuzyTVSadBoy/setup/refs/heads/main/OldShouko.py" -o /sdcard/Download/OldShouko.py
+curl -Ls "https://raw.githubusercontent.com/caot60002/ROKID-EDITED/refs/heads/main/main.py" -o /sdcard/Download/OldShouko.py
 
 # ============================================================
 hdr "HOÀN TẤT THIẾT LẬP"
