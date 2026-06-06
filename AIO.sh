@@ -21,9 +21,9 @@ run_root() {
     su -c "$1"
 }
 
-APK_1_URL="https://files.catbox.moe/ogtjtp.apk" # Roblox
-APK_2_URL="https://files.catbox.moe/zxz4lp.apk" # Roblox
-APK_3_URL="https://files.catbox.moe/blxs0h.apk"
+APK_1_URL="" # Roblox
+APK_2_URL="" # Roblox
+APK_3_URL=""
 APK_4_URL="https://files.catbox.moe/j19dz4.apk"
 
 # ============================================================
@@ -102,7 +102,7 @@ pip install --quiet requests rich prettytable pytz
 pkg install python-psutil -y -q
 
 log "Tải OldShouko.py..."
-curl -Ls "https://raw.githubusercontent.com/caot60002/ROKID-EDITED/refs/heads/main/main.py" -o /sdcard/Download/OldShouko.py
+curl -Ls "https://raw.githubusercontent.com/Wraith1vs11/Rejoin/refs/heads/main/OldShouko.py" -o /sdcard/Download/OldShouko.py
 
 # ============================================================
 hdr "HOÀN TẤT THIẾT LẬP"
